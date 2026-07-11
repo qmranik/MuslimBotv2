@@ -25,6 +25,7 @@ import (
 	"google.golang.org/api/option"
 	"golang.org/x/oauth2/google"
 	"muslimbot-orchestrator/internal/config"
+	"muslimbot-orchestrator/internal/knowledge"
 	"muslimbot-orchestrator/internal/store"
 )
 
@@ -80,6 +81,9 @@ func (h *KBHandler) ListSourcesHandler(c *gin.Context) {
 	if tid == "" {
 		tid = "default"
 	}
+	groupsAny, _ := c.Get("user_groups")
+	groups, _ := groupsAny.([]string)
+	staff := knowledge.IsStaff(groups)
 
 	var sources []store.KBSource
 	if store.DB != nil {
@@ -88,10 +92,12 @@ func (h *KBHandler) ListSourcesHandler(c *gin.Context) {
 			return
 		}
 	}
+	visible := knowledge.FilterVisible(sources, tid, staff)
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": sources,
-		"total": len(sources),
+		"items":    visible,
+		"total":    len(visible),
+		"as_staff": staff,
 	})
 }
 
@@ -203,14 +209,28 @@ func (h *KBHandler) UploadHandler(c *gin.Context) {
 	if sourceType == "" {
 		sourceType = "document"
 	}
+	visibility := strings.ToLower(strings.TrimSpace(c.PostForm("visibility")))
+	if visibility != knowledge.VisibilityPublic {
+		visibility = knowledge.VisibilityPrivate
+	}
+	uploadedBy, _ := c.Get("user_email")
+	uploader, _ := uploadedBy.(string)
 
-	// Create KBSource in DB
+	if !VertexConfigured(h.config) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+		})
+		return
+	}
+
 	sourceID := GenerateKBSID()
 	source := store.KBSource{
 		ID:         sourceID,
 		TenantID:   tid,
 		Title:      title,
 		SourceType: sourceType,
+		Visibility: visibility,
+		UploadedBy: uploader,
 		Status:     "indexing",
 	}
 
@@ -266,12 +286,20 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 	}
 
 	var req struct {
-		Title string `json:"title"`
-		URL   string `json:"url"`
-		Depth int    `json:"depth"`
+		Title      string `json:"title"`
+		URL        string `json:"url"`
+		Depth      int    `json:"depth"`
+		Visibility string `json:"visibility"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	if !VertexConfigured(h.config) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+		})
 		return
 	}
 
@@ -279,6 +307,12 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 	if title == "" {
 		title = req.URL
 	}
+	visibility := strings.ToLower(strings.TrimSpace(req.Visibility))
+	if visibility != knowledge.VisibilityPublic {
+		visibility = knowledge.VisibilityPrivate
+	}
+	uploadedBy, _ := c.Get("user_email")
+	uploader, _ := uploadedBy.(string)
 
 	sourceID := GenerateKBSID()
 	source := store.KBSource{
@@ -287,6 +321,8 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 		Title:      title,
 		SourceType: "scrape",
 		URL:        req.URL,
+		Visibility: visibility,
+		UploadedBy: uploader,
 		Status:     "indexing",
 	}
 
@@ -329,6 +365,12 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 }
 
 func (h *KBHandler) RetrieveHandler(c *gin.Context) {
+	if !VertexConfigured(h.config) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+		})
+		return
+	}
 	var req struct {
 		Query string `json:"query"`
 		TopK  int    `json:"top_k"`
@@ -345,7 +387,7 @@ func (h *KBHandler) RetrieveHandler(c *gin.Context) {
 	chunks, err := RetrieveContextsFromVertex(ctx, h.config, req.Query, req.TopK)
 	if err != nil {
 		log.Printf("[kb/retrieve] Vertex retrieve failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -357,6 +399,12 @@ func (h *KBHandler) RetrieveHandler(c *gin.Context) {
 }
 
 func (h *KBHandler) ChatHandler(c *gin.Context) {
+	if !VertexConfigured(h.config) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+		})
+		return
+	}
 	var req struct {
 		Message   string `json:"message"`
 		SessionID string `json:"session_id"`
@@ -378,7 +426,7 @@ func (h *KBHandler) ChatHandler(c *gin.Context) {
 	chunks, err := RetrieveContextsFromVertex(ctx, h.config, req.Message, req.TopK)
 	if err != nil {
 		log.Printf("[kb/chat] Context retrieve failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to pull knowledge context"})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to pull knowledge context from Vertex AI RAG"})
 		return
 	}
 

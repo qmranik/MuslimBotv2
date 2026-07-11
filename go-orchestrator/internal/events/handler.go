@@ -32,11 +32,21 @@ func (h *Handler) IngestEvent(c *gin.Context) {
 		return
 	}
 
+	tenantID := req.TenantID
+	if tenantID == "" {
+		if t, ok := c.Get("tenant_id"); ok {
+			tenantID, _ = t.(string)
+		}
+	}
+	if tenantID == "" {
+		tenantID = "default"
+	}
+
 	payloadBytes, _ := json.Marshal(req.Data)
 
 	event := store.EventOutbox{
 		Type:           req.Type,
-		TenantID:       req.TenantID,
+		TenantID:       tenantID,
 		Source:         req.Source,
 		Payload:        string(payloadBytes),
 		IdempotencyKey: req.IdempotencyKey,
@@ -49,9 +59,6 @@ func (h *Handler) IngestEvent(c *gin.Context) {
 			return
 		}
 	}
-
-	// In a real system, a background worker would dispatch this to n8n.
-	// For MVP, we simply acknowledge ingestion.
 
 	c.JSON(http.StatusOK, gin.H{"status": "ingested", "event_id": event.ID})
 }

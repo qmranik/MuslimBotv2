@@ -31,7 +31,7 @@ type toolRoute int
 
 const (
 	routeFrappe      toolRoute = iota // call a small_erp.api.* method
-	routeKB                           // knowledge base RAG (KB BFF /chat)
+	routeKB                           // Vertex AI RAG Engine retrieveContexts
 	routeN8N                          // n8n webhook (workflows, notifications, business AI)
 	routeLocal                        // synthesized locally (system_status)
 	routeUnsupported                  // needs a surface not available here (calendar, desk submit)

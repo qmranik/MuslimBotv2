@@ -23,9 +23,12 @@ type TenantUserMapping struct {
 // Tenant represents a provisioned tenant on the platform.
 type Tenant struct {
 	gorm.Model
-	TenantID   string `gorm:"uniqueIndex;not null" json:"tenant_id"`
-	FrappeSite string `json:"frappe_site"`
-	Status     string `gorm:"default:'provisioning'" json:"status"`
+	TenantID       string `gorm:"uniqueIndex;not null" json:"tenant_id"`
+	FrappeSite     string `json:"frappe_site"`
+	Status         string `gorm:"default:'provisioning'" json:"status"`
+	AuthentikGroup string `json:"authentik_group"`
+	N8NWebhookBase string `json:"n8n_webhook_base"`
+	FeaturesJSON   string `gorm:"type:text" json:"features_json"`
 }
 
 // EventOutbox stores cross-service events for async dispatch to n8n.
@@ -39,14 +42,19 @@ type EventOutbox struct {
 	Status         string `gorm:"default:'pending'" json:"status"`
 }
 
-// KBSource tracks knowledge base sources for RAG.
+// KBSource tracks knowledge base sources for RAG. The go-orchestrator owns this
+// metadata + access governance; the vectors themselves live in Vertex AI
+// (referenced by RagFileID). Visibility distinguishes org-public knowledge
+// (readable by customers/portal) from private/internal knowledge (staff only).
 type KBSource struct {
 	ID         string `gorm:"primaryKey;not null" json:"id"`
 	TenantID   string `gorm:"index" json:"tenant_id"`
 	Title      string `json:"title"`
 	SourceType string `json:"source_type"`
 	URL        string `json:"url"`
-	RagFileID  string `json:"rag_file_id"`
+	RagFileID  string `json:"rag_file_id"` // Vertex AI RAG file/corpus reference
+	Visibility string `gorm:"default:'private';index" json:"visibility"` // public | private
+	UploadedBy string `json:"uploaded_by"`
 	Status     string `gorm:"default:'queued'" json:"status"`
 }
 
