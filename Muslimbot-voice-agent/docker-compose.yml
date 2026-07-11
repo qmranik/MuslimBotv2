@@ -1,0 +1,49 @@
+version: '3.8'
+services:
+  muslimbot-voice-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: muslimbot-voice-agent:latest
+    container_name: muslimbot_livekit_worker
+    restart: unless-stopped
+    command: ["python", "agent.py", "start"]
+    env_file:
+      - .env
+    networks:
+      - smb-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  muslimbot-kb-bff:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: muslimbot-voice-agent:latest
+    container_name: muslimbot_kb_bff
+    restart: unless-stopped
+    command: ["uvicorn", "kb_bff.main:app", "--host", "0.0.0.0", "--port", "8787"]
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - kb-data:/app/data
+    networks:
+      - smb-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+volumes:
+  kb-data:
+
+networks:
+  smb-net:
+    external: true
+    name: liteerp_smb-net

@@ -1,0 +1,161 @@
+version: "3.9"
+
+x-frappe-common: &frappe-common
+  image: frappe/erpnext:v15
+  restart: unless-stopped
+  environment:
+    - DB_HOST=mariadb
+    - DB_PORT=3306
+    - REDIS_CACHE=redis://redis-cache:6379
+    - REDIS_QUEUE=redis://redis-queue:6379
+    - SOCKETIO_PORT=9000
+  volumes:
+    - frappe_sites:/home/frappe/frappe-bench/sites
+    - frappe_logs:/home/frappe/frappe-bench/logs
+  depends_on:
+    mariadb:
+      condition: service_healthy
+    redis-cache:
+      condition: service_started
+    redis-queue:
+      condition: service_started
+
+services:
+  # ── Database ──
+  mariadb:
+    image: mariadb:10.11
+    container_name: seed-mariadb
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-admin123}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 10
+      timeout: 5s
+
+  # ── Redis ──
+  redis-cache:
+    image: redis:7-alpine
+    container_name: seed-redis-cache
+    restart: unless-stopped
+    volumes:
+      - redis_cache_data:/data
+
+  redis-queue:
+    image: redis:7-alpine
+    container_name: seed-redis-queue
+    restart: unless-stopped
+    volumes:
+      - redis_queue_data:/data
+
+  # ── Frappe / ERPNext ──
+  frappe-web:
+    <<: *frappe-common
+    container_name: seed-frappe-web
+    command: >
+      bash -c "
+        ls -1 apps/erpnext 2>/dev/null || echo 'Waiting for configurator...';
+        /home/frappe/frappe-bench/env/bin/gunicorn
+          --bind 0.0.0.0:8000
+          --workers 2
+          --timeout 120
+          --graceful-timeout 30
+          frappe.app:application
+          --preload
+      "
+    ports:
+      - "${ERPNEXT_PORT:-8080}:8000"
+
+  frappe-socketio:
+    <<: *frappe-common
+    container_name: seed-frappe-socketio
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+
+  frappe-worker-short:
+    <<: *frappe-common
+    container_name: seed-frappe-worker-short
+    command: bench worker --queue short 1>> /home/frappe/frappe-bench/logs/worker.log 2>&1
+
+  frappe-worker-long:
+    <<: *frappe-common
+    container_name: seed-frappe-worker-long
+    command: bench worker --queue long 1>> /home/frappe/frappe-bench/logs/worker.log 2>&1
+
+  frappe-worker-default:
+    <<: *frappe-common
+    container_name: seed-frappe-worker-default
+    command: bench worker --queue default 1>> /home/frappe/frappe-bench/logs/worker.log 2>&1
+
+  frappe-scheduler:
+    <<: *frappe-common
+    container_name: seed-frappe-scheduler
+    command: bench schedule
+
+  # ── Site Configurator (runs once) ──
+  configurator:
+    <<: *frappe-common
+    container_name: seed-configurator
+    restart: "no"
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        if [ ! -f sites/${FRAPPE_SITE_NAME:-erp.localhost}/site_config.json ]; then
+          echo "Creating new site...";
+          bench new-site ${FRAPPE_SITE_NAME:-erp.localhost}
+            --mariadb-root-password ${MARIADB_ROOT_PASSWORD:-admin123}
+            --admin-password ${ERPNEXT_ADMIN_PASSWORD:-admin}
+            --install-app erpnext
+            --set-default;
+          echo "Site created.";
+        else
+          echo "Site already exists, running migrate...";
+          bench --site ${FRAPPE_SITE_NAME:-erp.localhost} migrate;
+        fi
+
+  # ── LLM Runtime ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: seed-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # ── Open WebUI ──
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: seed-open-webui
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-3000}:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_AUTH=true
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-mvp-secret-change-in-prod}
+      - RAG_EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - RAG_EMBEDDING_ENGINE=ollama
+      - CHUNK_SIZE=512
+      - CHUNK_OVERLAP=50
+      - DEFAULT_TOOLS_FUNCTION_CALLING_STATUS=native
+    volumes:
+      - open_webui_data:/app/backend/data
+    depends_on:
+      - ollama
+
+volumes:
+  mariadb_data:
+  redis_cache_data:
+  redis_queue_data:
+  frappe_sites:
+  frappe_logs:
+  ollama_data:
+  open_webui_data:

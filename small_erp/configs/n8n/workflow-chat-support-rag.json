@@ -1,0 +1,81 @@
+{
+  "name": "Chat Support RAG",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat-support",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-chat",
+      "name": "Webhook chat-support",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.KB_BFF_URL || 'http://muslimbot-kb-bff:8787') + '/chat' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-KB-API-Key",
+              "value": "={{ $env.KB_BFF_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": {{ JSON.stringify($json.body?.message || $json.message || '') }},\n  \"session_id\": {{ JSON.stringify($json.body?.session_id || $json.session_id || 'demo') }}\n}",
+        "options": {}
+      },
+      "id": "kb-bff-chat",
+      "name": "KB BFF Chat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('Webhook chat-support').first().json.body || $('Webhook chat-support').first().json;\nconst chat = $input.first().json;\nconst reply = chat.reply || chat.message?.reply || 'Sorry, I could not generate a response.';\nconst session_id = chat.session_id || webhook.session_id || 'demo';\nreturn [{ json: { reply, session_id, status: chat.status || 'ok' } }];"
+      },
+      "id": "format-reply",
+      "name": "Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 300]
+    }
+  ],
+  "connections": {
+    "Webhook chat-support": {
+      "main": [[{ "node": "KB BFF Chat", "type": "main", "index": 0 }]]
+    },
+    "KB BFF Chat": {
+      "main": [[{ "node": "Format Reply", "type": "main", "index": 0 }]]
+    },
+    "Format Reply": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "small-erp" }, { "name": "chat" }]
+}

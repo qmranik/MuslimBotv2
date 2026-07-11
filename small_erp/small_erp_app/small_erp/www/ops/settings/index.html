@@ -1,0 +1,242 @@
+{%- extends "small_erp/templates/includes/base.html" -%}
+{%- set active_page = "settings" -%}
+{%- set page_title = "Settings" -%}
+
+{%- block content -%}
+<div id="settings-root" style="max-width:720px;">
+
+    {# ─── User Profile ────────────────────────────────────────────────── #}
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+            <h3>My Profile</h3>
+            <button class="btn btn-sm btn-secondary" id="edit-profile-btn" onclick="toggleProfileEdit()">
+                <i data-lucide="edit-2" style="width:13px;height:13px;"></i> Edit
+            </button>
+        </div>
+        <div class="card-body" id="profile-display">
+            <div class="content-loading"><div class="spinner"></div></div>
+        </div>
+    </div>
+
+    {# ─── Change Password ─────────────────────────────────────────────── #}
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header"><h3>Change Password</h3></div>
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-label">Current Password</label>
+                <input type="password" class="form-control" id="old-password" autocomplete="current-password">
+            </div>
+            <div class="form-group">
+                <label class="form-label">New Password</label>
+                <input type="password" class="form-control" id="new-password" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Confirm New Password</label>
+                <input type="password" class="form-control" id="confirm-password" autocomplete="new-password">
+            </div>
+            <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+        </div>
+    </div>
+
+    {# ─── Company Information ──────────────────────────────────────────── #}
+    <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+            <h3>Company Information</h3>
+            <button class="btn btn-sm btn-secondary" id="edit-company-btn" onclick="toggleCompanyEdit()">
+                <i data-lucide="edit-2" style="width:13px;height:13px;"></i> Edit
+            </button>
+        </div>
+        <div class="card-body" id="company-display">
+            <div class="content-loading"><div class="spinner"></div></div>
+        </div>
+    </div>
+
+    {# ─── System Info ──────────────────────────────────────────────────── #}
+    <div class="card">
+        <div class="card-header"><h3>System Info</h3></div>
+        <div class="card-body" id="system-info">
+            <div class="content-loading"><div class="spinner"></div></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let profileData = null;
+let companyData = null;
+
+async function loadSettings() {
+    // Load profile
+    try {
+        const prof = await frappeCall('small_erp.api.settings.get_user_profile', {}, 'GET');
+        profileData = prof.user;
+        renderProfile(false);
+    } catch(e) { document.getElementById('profile-display').innerHTML = '<p style="color:var(--text-muted);">Failed to load profile</p>'; }
+
+    // Load company
+    try {
+        const comp = await frappeCall('small_erp.api.settings.get_company_info', {}, 'GET');
+        companyData = comp.company;
+        renderCompany(false);
+    } catch(e) { document.getElementById('company-display').innerHTML = '<p style="color:var(--text-muted);">Failed to load company info</p>'; }
+
+    // Load system info
+    try {
+        const sys = await frappeCall('small_erp.api.settings.get_system_info', {}, 'GET');
+        document.getElementById('system-info').innerHTML = `
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 20px;font-size:13px;">
+                <span style="color:var(--text-muted);">Company</span><span>${sys.company || '—'}</span>
+                <span style="color:var(--text-muted);">Currency</span><span>${sys.currency}</span>
+                <span style="color:var(--text-muted);">Country</span><span>${sys.country}</span>
+                <span style="color:var(--text-muted);">Users</span><span>${sys.user_count}</span>
+                <span style="color:var(--text-muted);">Items</span><span>${sys.item_count}</span>
+                <span style="color:var(--text-muted);">Customers</span><span>${sys.customer_count}</span>
+                <span style="color:var(--text-muted);">Site</span><span style="font-family:var(--font-mono);font-size:12px;">${sys.site}</span>
+                <span style="color:var(--text-muted);">Frappe</span><span>${sys.frappe_version}</span>
+                <span style="color:var(--text-muted);">App</span><span>Small ERP v1.0.0</span>
+            </div>
+        `;
+    } catch(e) { document.getElementById('system-info').innerHTML = '<p style="color:var(--text-muted);">Failed to load</p>'; }
+}
+
+function renderProfile(editMode) {
+    const u = profileData;
+    if (!u) return;
+    const container = document.getElementById('profile-display');
+
+    if (editMode) {
+        container.innerHTML = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group"><label class="form-label">First Name</label>
+                    <input type="text" class="form-control" id="prof-first" value="${u.first_name}"></div>
+                <div class="form-group"><label class="form-label">Last Name</label>
+                    <input type="text" class="form-control" id="prof-last" value="${u.last_name}"></div>
+                <div class="form-group"><label class="form-label">Phone</label>
+                    <input type="tel" class="form-control" id="prof-phone" value="${u.mobile_no}"></div>
+                <div class="form-group"><label class="form-label">Email</label>
+                    <input type="email" class="form-control" value="${u.email}" disabled></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button class="btn btn-primary" onclick="saveProfile()">Save</button>
+                <button class="btn btn-secondary" onclick="renderProfile(false)">Cancel</button>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div><span class="form-label">Name</span><div style="font-weight:600;">${u.full_name}</div></div>
+                <div><span class="form-label">Email</span><div>${u.email}</div></div>
+                <div><span class="form-label">Phone</span><div>${u.mobile_no || '—'}</div></div>
+                <div><span class="form-label">Roles</span>
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;font-size:12px;">
+                        ${u.roles.filter(r => r !== 'All' && r !== 'Guest').map(r => '<span class="badge badge-secondary">' + r + '</span>').join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function toggleProfileEdit() {
+    renderProfile(true);
+}
+
+async function saveProfile() {
+    try {
+        const resp = await frappeCall('small_erp.api.settings.update_user_profile', {
+            first_name: document.getElementById('prof-first').value,
+            last_name: document.getElementById('prof-last').value,
+            mobile_no: document.getElementById('prof-phone').value,
+        });
+        profileData.first_name = document.getElementById('prof-first').value;
+        profileData.last_name = document.getElementById('prof-last').value;
+        profileData.full_name = resp.full_name || (profileData.first_name + ' ' + profileData.last_name).trim();
+        profileData.mobile_no = document.getElementById('prof-phone').value;
+        renderProfile(false);
+        showToast('Profile updated', 'success');
+    } catch(e) { showToast(e.message || 'Failed to update', 'error'); }
+}
+
+function renderCompany(editMode) {
+    const c = companyData;
+    if (!c) { document.getElementById('company-display').innerHTML = '<p style="color:var(--text-muted);">No company configured</p>'; return; }
+    const container = document.getElementById('company-display');
+
+    if (editMode) {
+        container.innerHTML = `
+            <div class="form-group"><label class="form-label">Company Name</label>
+                <input type="text" class="form-control" value="${c.company_name}" disabled>
+                <small style="color:var(--text-muted);">Company name cannot be changed</small></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div class="form-group"><label class="form-label">Phone</label>
+                    <input type="tel" class="form-control" id="comp-phone" value="${c.phone_no}"></div>
+                <div class="form-group"><label class="form-label">Email</label>
+                    <input type="email" class="form-control" id="comp-email" value="${c.email}"></div>
+                <div class="form-group"><label class="form-label">Website</label>
+                    <input type="url" class="form-control" id="comp-website" value="${c.website}"></div>
+            </div>
+            <div class="form-group"><label class="form-label">Address / Description</label>
+                <textarea class="form-control" id="comp-address" rows="2">${c.address}</textarea></div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button class="btn btn-primary" onclick="saveCompany()">Save</button>
+                <button class="btn btn-secondary" onclick="renderCompany(false)">Cancel</button>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                <div><span class="form-label">Company</span><div style="font-weight:600;">${c.company_name}</div></div>
+                <div><span class="form-label">Currency</span><div>${c.default_currency}</div></div>
+                <div><span class="form-label">Country</span><div>${c.country}</div></div>
+                <div><span class="form-label">Phone</span><div>${c.phone_no || '—'}</div></div>
+                <div><span class="form-label">Email</span><div>${c.email || '—'}</div></div>
+                <div><span class="form-label">Website</span><div>${c.website || '—'}</div></div>
+            </div>
+            ${c.address ? '<div style="margin-top:12px;"><span class="form-label">Address</span><div style="font-size:13px;">' + c.address + '</div></div>' : ''}
+        `;
+    }
+}
+
+function toggleCompanyEdit() {
+    renderCompany(true);
+}
+
+async function saveCompany() {
+    try {
+        await frappeCall('small_erp.api.settings.update_company_info', {
+            phone_no: document.getElementById('comp-phone').value,
+            email: document.getElementById('comp-email').value,
+            website: document.getElementById('comp-website').value,
+            address: document.getElementById('comp-address').value,
+        });
+        companyData.phone_no = document.getElementById('comp-phone').value;
+        companyData.email = document.getElementById('comp-email').value;
+        companyData.website = document.getElementById('comp-website').value;
+        companyData.address = document.getElementById('comp-address').value;
+        renderCompany(false);
+        showToast('Company info updated', 'success');
+    } catch(e) { showToast(e.message || 'Failed to update', 'error'); }
+}
+
+async function changePassword() {
+    const oldPw = document.getElementById('old-password').value;
+    const newPw = document.getElementById('new-password').value;
+    const confirmPw = document.getElementById('confirm-password').value;
+
+    if (!oldPw || !newPw) { showToast('Please fill all password fields', 'error'); return; }
+    if (newPw !== confirmPw) { showToast('New passwords do not match', 'error'); return; }
+    if (newPw.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+
+    try {
+        await frappeCall('small_erp.api.settings.change_password', {
+            old_password: oldPw, new_password: newPw
+        });
+        showToast('Password changed successfully', 'success');
+        document.getElementById('old-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('confirm-password').value = '';
+    } catch(e) { showToast(e.message || 'Failed to change password', 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', loadSettings);
+</script>
+{%- endblock -%}

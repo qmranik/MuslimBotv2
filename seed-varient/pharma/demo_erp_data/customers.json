@@ -1,0 +1,82 @@
+[
+  {
+    "customer_name": "Rahim Uddin",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801711234567",
+    "email": "rahim@example.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Fatema Begum",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801812345678",
+    "email": "fatema@example.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Kamal Hossain",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801912345678",
+    "email": "kamal@example.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Nasreen Akter",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801612345678",
+    "email": "nasreen@example.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Shahidul Islam",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801512345678",
+    "email": "shahidul@example.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Ayesha Siddiqua",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801312345678",
+    "email": "ayesha@example.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Dhaka Grocery Mart",
+    "customer_type": "Company",
+    "customer_group": "Commercial",
+    "phone": "+8801911111111",
+    "email": "info@dhakagrocery.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Green Valley Restaurant",
+    "customer_type": "Company",
+    "customer_group": "Commercial",
+    "phone": "+8801822222222",
+    "email": "orders@greenvalley.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "City Clinic",
+    "customer_type": "Company",
+    "customer_group": "Commercial",
+    "phone": "+8801733333333",
+    "email": "pharmacy@cityclinic.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Walk-in Customer",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "",
+    "email": "",
+    "territory": "Bangladesh"
+  }
+]

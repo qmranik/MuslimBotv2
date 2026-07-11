@@ -1,0 +1,20 @@
+# gitleaks config for the MuslimBot system (MUSLIMBOT_PRODUCTION_PLAN W0.3/W7).
+# Extends the default ruleset; add allowlists for known-safe placeholders.
+title = "MuslimBot gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Template placeholders and non-secret fixtures"
+regexes = [
+  '''CHANGE_ME[A-Za-z0-9_]*''',
+  '''your-[a-z-]+-here''',
+  '''(?i)example\.com''',
+]
+paths = [
+  '''.*\.env\.template$''',
+  '''.*/data/database\.js$''',
+  '''.*_test\.(go|dart)$''',
+  '''.*test/.*''',
+]

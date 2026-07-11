@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Environment files (secrets)
+.env
+small_erp/.env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes / backups
+backups/
+*.tar.gz
+*.sql.gz
+
+# Other sub-projects (not needed in image)
+seed-varient/
+voice_dictation/
+
+# Node
+node_modules/

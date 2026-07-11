@@ -1,0 +1,173 @@
+version: '3.8'
+
+services:
+  # ─── MariaDB ──────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:10.11
+    container_name: smb-mariadb-mvp
+    restart: unless-stopped
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      - "--skip-character-set-client-handshake"
+      - "--skip-innodb-read-only-compressed"
+      - "--innodb-buffer-pool-size=512M"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+    volumes:
+      - mariadb-data-mvp:/var/lib/mysql
+    networks:
+      - smb-net-mvp
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis Trio ────────────────────────────────────────────────────────
+  redis-cache:
+    image: redis:7-alpine
+    container_name: smb-redis-cache-mvp
+    restart: unless-stopped
+    networks:
+      - smb-net-mvp
+
+  redis-queue:
+    image: redis:7-alpine
+    container_name: smb-redis-queue-mvp
+    restart: unless-stopped
+    networks:
+      - smb-net-mvp
+
+  redis-socketio:
+    image: redis:7-alpine
+    container_name: smb-redis-socketio-mvp
+    restart: unless-stopped
+    networks:
+      - smb-net-mvp
+
+  # ─── Frappe Web Server ────────────────────────────────────────────────
+  frappe-web:
+    image: localhost/small-erp:latest
+    container_name: smb-frappe-web-mvp
+    restart: unless-stopped
+    command: bench serve --port 8000
+    environment:
+      - DB_ROOT_PASSWORD=rootpassword
+      - FRAPPE_SITE_NAME=small.localhost
+      - ADMIN_PASSWORD=admin
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      - frappe-sites-mvp:/home/frappe/frappe-bench/sites
+      - frappe-logs-mvp:/home/frappe/frappe-bench/logs
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
+      redis-socketio:
+        condition: service_started
+    networks:
+      - smb-net-mvp
+
+  frappe-worker-default:
+    image: localhost/small-erp:latest
+    container_name: smb-frappe-worker-mvp
+    restart: unless-stopped
+    command: bench worker --queue default
+    volumes:
+      - frappe-sites-mvp:/home/frappe/frappe-bench/sites
+      - frappe-logs-mvp:/home/frappe/frappe-bench/logs
+    depends_on:
+      frappe-web:
+        condition: service_started
+    networks:
+      - smb-net-mvp
+
+  frappe-scheduler:
+    image: localhost/small-erp:latest
+    container_name: smb-frappe-scheduler-mvp
+    restart: unless-stopped
+    command: bench schedule
+    volumes:
+      - frappe-sites-mvp:/home/frappe/frappe-bench/sites
+      - frappe-logs-mvp:/home/frappe/frappe-bench/logs
+    depends_on:
+      frappe-web:
+        condition: service_started
+    networks:
+      - smb-net-mvp
+
+  # ─── Muslimbot KB BFF ─────────────────────────────────────────────────
+  muslimbot-kb-bff:
+    build:
+      context: ./Muslimbot-voice-agent
+      dockerfile: Dockerfile
+    image: muslimbot-voice-agent:latest
+    container_name: smb-muslimbot-kb-bff-mvp
+    restart: unless-stopped
+    command: ["uvicorn", "kb_bff.main:app", "--host", "0.0.0.0", "--port", "8787"]
+    env_file:
+      - .env
+    environment:
+      - ERPNEXT_URL=http://frappe-web:8000
+      - REDIS_URL=redis://redis-cache:6379/2
+      - KB_DATA_DIR=/app/data
+      - TENANT_ID=${TENANT_ID:-default}
+      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
+      - LIVEKIT_URL=${LIVEKIT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173}
+    volumes:
+      - muslimbot-kb-data-mvp:/app/data
+    depends_on:
+      redis-cache:
+        condition: service_started
+    networks:
+      - smb-net-mvp
+
+  # ─── Generative UI ────────────────────────────────────────────────────
+  generative-ui:
+    build:
+      context: ./generative-ui
+      dockerfile: Dockerfile
+      args:
+        VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-}
+        VITE_LIVEKIT_URL: ${LIVEKIT_URL:-}
+    image: localhost/generative-ui:latest
+    container_name: smb-generative-ui-mvp
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "5173:80"
+    environment:
+      - FRAPPE_URL=http://frappe-web:8000
+      - FRAPPE_SITE_HOST=small.localhost:8000
+      - FRAPPE_API_KEY=${FRAPPE_API_KEY:-}
+      - FRAPPE_API_SECRET=${FRAPPE_API_SECRET:-}
+      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
+    depends_on:
+      frappe-web:
+        condition: service_started
+      muslimbot-kb-bff:
+        condition: service_started
+    networks:
+      - smb-net-mvp
+
+volumes:
+  mariadb-data-mvp:
+  frappe-sites-mvp:
+  frappe-logs-mvp:
+  muslimbot-kb-data-mvp:
+
+networks:
+  smb-net-mvp:
+    driver: bridge

@@ -1,0 +1,82 @@
+[
+  {
+    "customer_name": "Rafiq Ahmed",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801711234567",
+    "email": "rafiq.ahmed@gmail.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Sadia Rahman",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801812345678",
+    "email": "sadia.rahman@outlook.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Tanvir Hasan",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801912345678",
+    "email": "tanvir.h@gmail.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Nusrat Jahan",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801612345678",
+    "email": "nusrat.j@yahoo.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Imran Khan",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "+8801512345678",
+    "email": "imran.khan99@gmail.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Dhaka IT Solutions Ltd",
+    "customer_type": "Company",
+    "customer_group": "Commercial",
+    "phone": "+8801911111111",
+    "email": "procurement@dhakait.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "BDGaming Cafe",
+    "customer_type": "Company",
+    "customer_group": "Commercial",
+    "phone": "+8801822222222",
+    "email": "manager@bdgaming.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "University of Dhaka - CS Dept",
+    "customer_type": "Company",
+    "customer_group": "Commercial",
+    "phone": "+8801733333333",
+    "email": "cs.procurement@du.ac.bd",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "FastTrack Logistics",
+    "customer_type": "Company",
+    "customer_group": "Commercial",
+    "phone": "+8801644444444",
+    "email": "it@fasttrackbd.com",
+    "territory": "Bangladesh"
+  },
+  {
+    "customer_name": "Walk-in Customer",
+    "customer_type": "Individual",
+    "customer_group": "Individual",
+    "phone": "",
+    "email": "",
+    "territory": "Bangladesh"
+  }
+]

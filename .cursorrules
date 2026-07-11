@@ -1,0 +1,15 @@
+# Project Architecture
+Small ERP SaaS built on ERPNext v15 with an HTMX-based standalone frontend, n8n AI automation, Open WebUI, and a LiveKit+Gemini real-time voice assistant (Muslimbot).
+The architecture consists of a Traefik proxy routing to tenant-specific Frappe/ERPNext instances, MariaDB per tenant, shared Redis, and n8n for AI workflows.
+
+# Coding Standards
+- Use snake_case for variables and functions.
+- Strict typing is mandatory.
+- Logic must reside strictly in the service layer.
+- No business logic in routes.
+
+# Rules
+- NEVER modify front-end files unless explicitly told to bypass this rule.
+- NEVER commit files directly without generating a diff and summarizing it first.
+- ALWAYS check context size.
+- STRICTLY ignore reading `.env` or secret files to prevent token leaks.

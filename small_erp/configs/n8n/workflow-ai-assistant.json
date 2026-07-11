@@ -1,0 +1,118 @@
+{
+  "name": "SMB Ops - AI Business Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-assistant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRAPPE_URL }}/api/method/frappe.client.get_list",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"doctype\": \"Item\",\n  \"filters\": {\"disabled\": 0, \"is_stock_item\": 1},\n  \"fields\": [\"name\", \"item_name\", \"item_group\", \"standard_rate\"],\n  \"limit_page_length\": 50\n}",
+        "options": {}
+      },
+      "id": "fetch-items-context",
+      "name": "Fetch Items Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRAPPE_URL }}/api/method/small_erp.api.dashboard.get_dashboard_kpis",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-kpis-context",
+      "name": "Fetch KPIs Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 400]
+    },
+    {
+      "parameters": {
+        "operation": "message",
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a helpful business assistant for a small organization running ERPNext. You have access to the following real-time business data:\n\nBUSINESS KPIs:\n{{ $node['Fetch KPIs Context'].json.message | stringify }}\n\nACTIVE PRODUCTS (sample):\n{{ $node['Fetch Items Context'].json.data | stringify }}\n\nRules:\n1. Answer concisely and specifically using the data provided.\n2. Format numbers with currency symbols.\n3. If you don't have enough data to answer, say so honestly.\n4. Suggest actionable next steps when appropriate.\n5. Keep responses under 200 words."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.body.question }}\n\nContext area: {{ $json.body.context }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 500
+        }
+      },
+      "id": "openai-chat",
+      "name": "AI Response",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"answer\": {{ JSON.stringify($json.text) }},\n  \"status\": \"ok\",\n  \"context\": \"{{ $node['Webhook Trigger'].json.body.context }}\"\n}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          { "node": "Fetch Items Context", "type": "main", "index": 0 },
+          { "node": "Fetch KPIs Context", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch Items Context": {
+      "main": [
+        [{ "node": "AI Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch KPIs Context": {
+      "main": [
+        [{ "node": "AI Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI Response": {
+      "main": [
+        [{ "node": "Respond to Webhook", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    { "name": "smb-ops" },
+    { "name": "ai" }
+  ]
+}

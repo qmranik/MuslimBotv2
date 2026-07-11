@@ -1,0 +1,87 @@
+[
+  {
+    "customer": "Dhaka IT Solutions Ltd",
+    "items": [
+      {"item_code": "LAPTOP-HP-PBOOK", "qty": 10, "rate": 72999},
+      {"item_code": "MON-24-FHD-DELL", "qty": 10, "rate": 21999},
+      {"item_code": "KB-WIRELESS-LOGI", "qty": 10, "rate": 2499},
+      {"item_code": "UPS-650VA", "qty": 10, "rate": 3999}
+    ],
+    "days_ago": 30,
+    "paid": true
+  },
+  {
+    "customer": "BDGaming Cafe",
+    "items": [
+      {"item_code": "DESKTOP-CUSTOM-01", "qty": 3, "rate": 145000},
+      {"item_code": "MON-34-UW-SAMSUNG", "qty": 3, "rate": 54999},
+      {"item_code": "KB-MECH-RAPOO", "qty": 3, "rate": 3499},
+      {"item_code": "MOUSE-GAMING-REDRAGON", "qty": 3, "rate": 1999}
+    ],
+    "days_ago": 15,
+    "paid": true
+  },
+  {
+    "customer": "University of Dhaka - CS Dept",
+    "items": [
+      {"item_code": "LAPTOP-T14S", "qty": 5, "rate": 134999},
+      {"item_code": "WEBCAM-LOGITECH", "qty": 5, "rate": 7499}
+    ],
+    "days_ago": 10,
+    "paid": false
+  },
+  {
+    "customer": "Rafiq Ahmed",
+    "items": [
+      {"item_code": "LAPTOP-ASUS-TUF", "qty": 1, "rate": 109999},
+      {"item_code": "MOUSE-GAMING-REDRAGON", "qty": 1, "rate": 1999}
+    ],
+    "days_ago": 5,
+    "paid": true
+  },
+  {
+    "customer": "Sadia Rahman",
+    "items": [
+      {"item_code": "LAPTOP-X1C-G12", "qty": 1, "rate": 199999},
+      {"item_code": "CABLE-USBC-1M", "qty": 2, "rate": 899}
+    ],
+    "days_ago": 3,
+    "paid": true
+  },
+  {
+    "customer": "Tanvir Hasan",
+    "items": [
+      {"item_code": "CPU-R5-7600X", "qty": 1, "rate": 24999},
+      {"item_code": "MOBO-B650-AM5", "qty": 1, "rate": 17999},
+      {"item_code": "RAM-DDR5-16", "qty": 1, "rate": 6499},
+      {"item_code": "SSD-NVME-1TB", "qty": 1, "rate": 9999},
+      {"item_code": "GPU-RTX4060", "qty": 1, "rate": 38999},
+      {"item_code": "PSU-650W", "qty": 1, "rate": 5999},
+      {"item_code": "CASE-GAMING-RGB", "qty": 1, "rate": 4999},
+      {"item_code": "COOLER-TOWER", "qty": 1, "rate": 2999},
+      {"item_code": "THERMAL-PASTE", "qty": 1, "rate": 799}
+    ],
+    "days_ago": 7,
+    "paid": true
+  },
+  {
+    "customer": "FastTrack Logistics",
+    "items": [
+      {"item_code": "PRINTER-HP-LASER", "qty": 2, "rate": 28999},
+      {"item_code": "TONER-HP-CF259A", "qty": 6, "rate": 6999},
+      {"item_code": "ROUTER-TPLINK-AX", "qty": 3, "rate": 6999},
+      {"item_code": "UPS-1200VA", "qty": 2, "rate": 7999}
+    ],
+    "days_ago": 20,
+    "paid": false
+  },
+  {
+    "customer": "Walk-in Customer",
+    "items": [
+      {"item_code": "RAM-DDR5-16", "qty": 2, "rate": 6499},
+      {"item_code": "SSD-NVME-512", "qty": 1, "rate": 4999}
+    ],
+    "days_ago": 1,
+    "paid": true
+  }
+]

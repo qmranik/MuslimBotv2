@@ -1,0 +1,91 @@
+{
+  "name": "SMB Ops - ERP Event Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "erp-event",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "event-webhook",
+      "name": "Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            { "outputIndex": 0, "value": "sales_invoice_submitted" },
+            { "outputIndex": 1, "value": "low_stock_alert" },
+            { "outputIndex": 2, "value": "stock_received" }
+          ]
+        },
+        "fallbackOutput": "extra",
+        "mode": "rules",
+        "dataPropertyName": "={{ $json.body.event }}"
+      },
+      "id": "event-router",
+      "name": "Route by Event Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.data.grand_total }}",
+              "rightValue": 10000,
+              "operator": { "type": "number", "operation": "gte" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "high-value-check",
+      "name": "High Value Sale?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [640, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "notification",
+              "value": "=🔔 Low Stock Alert: {{ $json.body.data.item_name }} ({{ $json.body.data.item_code }}) is at {{ $json.body.data.current_qty }} units. Safety stock: {{ $json.body.data.safety_stock }}. Reorder now!",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "low-stock-notification",
+      "name": "Format Low Stock Alert",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [640, 400]
+    }
+  ],
+  "connections": {
+    "Event Webhook": {
+      "main": [
+        [{ "node": "Route by Event Type", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route by Event Type": {
+      "main": [
+        [{ "node": "High Value Sale?", "type": "main", "index": 0 }],
+        [{ "node": "Format Low Stock Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "smb-ops" }, { "name": "events" }]
+}

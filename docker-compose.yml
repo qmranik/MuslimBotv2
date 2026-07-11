@@ -1,0 +1,567 @@
+##############################################################################
+# Small ERP — Demo Stack (GCP VM / investor demo)
+#
+# Full demo: small_erp + generative-ui + n8n + Chatwoot + Postiz + Muslimbot
+# Shared Postgres (chatwoot + postiz + temporal) and shared Redis (chatwoot + postiz)
+# Target VM: GCP e2-standard-8 (8 vCPU / 32 GB RAM)
+#
+# Usage:
+#   cp .env.template .env && docker build -t small-erp:latest .
+#   docker compose up -d
+#   bash small_erp/scripts/install-demo.sh
+#   docker compose --profile voice up -d    # optional Muslimbot (requires LiveKit keys)
+#
+# Fresh install after old per-app Postgres volumes:
+#   docker compose down -v   # wipes DB volumes — use only on new demo VM
+#
+# SaaS multi-tenant (Traefik + Open WebUI): use docker-compose.saas.yml instead
+##############################################################################
+
+x-frappe-common: &frappe-common
+  image: ${REGISTRY:-localhost}/small-erp:${IMAGE_TAG:-latest}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    - DB_HOST=mariadb
+    - DB_PORT=3306
+    - REDIS_CACHE=redis://redis-cache:6379
+    - REDIS_QUEUE=redis://redis-queue:6379
+    - REDIS_SOCKETIO=redis://redis-socketio:6379
+    - SOCKETIO_PORT=9000
+    - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+  volumes:
+    - frappe-sites:/home/frappe/frappe-bench/sites
+    - frappe-logs:/home/frappe/frappe-bench/logs
+  networks:
+    - smb-net
+
+x-chatwoot-common: &chatwoot-common
+  image: chatwoot/chatwoot:latest
+  restart: unless-stopped
+  env_file: .env
+  environment: &chatwoot-env
+    RAILS_ENV: production
+    NODE_ENV: production
+    INSTALLATION_ENV: docker
+    POSTGRES_HOST: postgres-shared
+    POSTGRES_USERNAME: chatwoot
+    POSTGRES_PASSWORD: ${CHATWOOT_DB_PASSWORD}
+    POSTGRES_DATABASE: chatwoot
+    REDIS_URL: redis://shared-redis:6379/0
+    SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY}
+    FRONTEND_URL: ${CHATWOOT_FRONTEND_URL:-http://localhost:3000}
+    ENABLE_ACCOUNT_SIGNUP: "false"
+    FORCE_SSL: "false"
+  volumes:
+    - chatwoot-storage:/app/storage
+  networks:
+    - smb-net
+
+x-postiz-common: &postiz-common
+  image: ghcr.io/gitroomhq/postiz-app:latest
+  restart: unless-stopped
+  env_file: .env
+  environment: &postiz-env
+    MAIN_URL: ${POSTIZ_PUBLIC_URL:-http://localhost:4007}
+    FRONTEND_URL: ${POSTIZ_PUBLIC_URL:-http://localhost:4007}
+    NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_PUBLIC_URL:-http://localhost:4007}/api
+    JWT_SECRET: ${POSTIZ_JWT_SECRET}
+    DATABASE_URL: postgresql://postiz_user:${POSTIZ_DB_PASSWORD}@postgres-shared:5432/postiz
+    REDIS_URL: redis://shared-redis:6379/1
+    BACKEND_INTERNAL_URL: http://localhost:3000
+    TEMPORAL_ADDRESS: temporal:7233
+    IS_GENERAL: "true"
+    DISABLE_REGISTRATION: "true"
+    RUN_CRON: "true"
+    STORAGE_PROVIDER: local
+    UPLOAD_DIRECTORY: /uploads
+    NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
+    API_LIMIT: 30
+    NX_ADD_PLUGINS: "false"
+  volumes:
+    - postiz-config:/config/
+    - postiz-uploads:/uploads/
+  networks:
+    - smb-net
+
+services:
+  # ─── MariaDB (Frappe / ERPNext) ───────────────────────────────────────
+  mariadb:
+    image: mariadb:10.11
+    container_name: demo-mariadb
+    restart: unless-stopped
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      - "--skip-character-set-client-handshake"
+      - "--skip-innodb-read-only-compressed"
+      - "--innodb-buffer-pool-size=${DB_BUFFER_POOL:-1536M}"
+      - "--innodb-log-file-size=128M"
+      - "--innodb-flush-log-at-trx-commit=2"
+      - "--innodb-flush-method=O_DIRECT"
+      - "--max-connections=250"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    networks:
+      - smb-net
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+  # ─── Shared Postgres (Chatwoot + Postiz + Temporal) ───────────────────
+  postgres-shared:
+    image: pgvector/pgvector:pg16
+    container_name: demo-postgres-shared
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SHARED_PASSWORD}
+      POSTGRES_DB: postgres
+      CHATWOOT_DB_PASSWORD: ${CHATWOOT_DB_PASSWORD}
+      POSTIZ_DB_PASSWORD: ${POSTIZ_DB_PASSWORD}
+      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:-temporal}
+    volumes:
+      - postgres-shared-data:/var/lib/postgresql/data
+      - ./configs/postgres/init-multidb.sh:/docker-entrypoint-initdb.d/10-init-multidb.sh:ro
+    networks:
+      - smb-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  # ─── Shared Redis (Chatwoot DB 0, Postiz DB 1) ────────────────────────
+  shared-redis:
+    image: redis:7-alpine
+    container_name: demo-shared-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - smb-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 320M
+
+  # ─── Redis Trio (Frappe) ───────────────────────────────────────────────
+  redis-cache:
+    image: redis:7-alpine
+    container_name: demo-redis-cache
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    networks:
+      - smb-net
+    deploy:
+      resources:
+        limits:
+          memory: 320M
+
+  # ─── Redis Queue ───────────────────────────────────────────────────
+  redis-queue:
+    image: redis:7-alpine
+    container_name: demo-redis-queue
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --save 60 1000
+      --appendonly yes
+    volumes:
+      - redis-queue-data:/data
+    networks:
+      - smb-net
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  # ─── Redis Socket.io ────────────────────────────────────────────────
+  redis-socketio:
+    image: redis:7-alpine
+    container_name: demo-redis-socketio
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 64mb
+      --save ""
+      --appendonly no
+    networks:
+      - smb-net
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # ─── Frappe Web + Workers ─────────────────────────────────────────────
+  frappe-web:
+    <<: *frappe-common
+    container_name: demo-frappe-web
+    command: >
+      /home/frappe/frappe-bench/env/bin/gunicorn
+      --chdir=/home/frappe/frappe-bench/sites
+      --bind=0.0.0.0:8000
+      --workers=4
+      --threads=2
+      --worker-class=gthread
+      --worker-tmp-dir=/dev/shm
+      --timeout=120
+      --graceful-timeout=30
+      --preload
+      frappe.app:application
+    ports:
+      - "${FRAPPE_PORT:-8000}:8000"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
+      redis-socketio:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  frappe-worker-default:
+    <<: *frappe-common
+    container_name: demo-frappe-worker-default
+    command: bench worker --queue default
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  frappe-worker-short:
+    <<: *frappe-common
+    container_name: demo-frappe-worker-short
+    command: bench worker --queue short
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  frappe-worker-long:
+    <<: *frappe-common
+    container_name: demo-frappe-worker-long
+    command: bench worker --queue long
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  frappe-scheduler:
+    <<: *frappe-common
+    container_name: demo-frappe-scheduler
+    command: bench schedule
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  frappe-socketio:
+    <<: *frappe-common
+    container_name: demo-frappe-socketio
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ─── n8n — AI & Automation ─────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:1.64.3
+    container_name: demo-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678}
+      - DB_TYPE=sqlite
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - GENERIC_TIMEZONE=${TZ:-UTC}
+      - FRAPPE_URL=http://frappe-web:8000
+      - FRAPPE_API_KEY=${FRAPPE_API_KEY}
+      - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+      - POSTIZ_URL=http://postiz:5000
+    volumes:
+      - n8n-data:/home/node/.n8n
+    networks:
+      - smb-net
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  # ─── Generative UI (React SPA + nginx API proxy) ───────────────────────
+  generative-ui:
+    build:
+      context: ./generative-ui
+      dockerfile: Dockerfile
+      args:
+        VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-}
+        VITE_LIVEKIT_URL: ${LIVEKIT_URL:-}
+    image: ${REGISTRY:-localhost}/generative-ui:${IMAGE_TAG:-latest}
+    container_name: demo-generative-ui
+    restart: unless-stopped
+    ports:
+      - "${GENERATIVE_UI_PORT:-5173}:80"
+    environment:
+      - FRAPPE_SITE_HOST=${FRAPPE_SITE_HOST:-${FRAPPE_SITE_NAME:-small.localhost}:8000}
+      - FRAPPE_API_KEY=${FRAPPE_API_KEY}
+      - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+    depends_on:
+      frappe-web:
+        condition: service_started
+    networks:
+      - smb-net
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ─── Chatwoot — Omnichannel Support ────────────────────────────────────
+  chatwoot-rails:
+    <<: *chatwoot-common
+    container_name: demo-chatwoot
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    ports:
+      - "${CHATWOOT_PORT:-3000}:3000"
+    depends_on:
+      postgres-shared:
+        condition: service_healthy
+      shared-redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+  chatwoot-worker:
+    <<: *chatwoot-common
+    container_name: demo-chatwoot-worker
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    depends_on:
+      postgres-shared:
+        condition: service_healthy
+      shared-redis:
+        condition: service_healthy
+      chatwoot-rails:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # ─── Temporal (Postiz job scheduler) ───────────────────────────────────
+  temporal-elasticsearch:
+    image: elasticsearch:7.17.27
+    container_name: demo-temporal-elasticsearch
+    restart: unless-stopped
+    environment:
+      - cluster.routing.allocation.disk.threshold_enabled=true
+      - cluster.routing.allocation.disk.watermark.low=512mb
+      - cluster.routing.allocation.disk.watermark.high=256mb
+      - cluster.routing.allocation.disk.watermark.flood_stage=128mb
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+      - xpack.security.enabled=false
+    networks:
+      - smb-net
+    expose:
+      - "9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS \"http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s\" || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    volumes:
+      - temporal-elasticsearch-data:/usr/share/elasticsearch/data
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    container_name: demo-temporal
+    restart: unless-stopped
+    expose:
+      - "7233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal}
+      - POSTGRES_SEEDS=postgres-shared
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
+      - ENABLE_ES=true
+      - ES_SEEDS=temporal-elasticsearch
+      - ES_VERSION=v7
+      - TEMPORAL_NAMESPACE=default
+    depends_on:
+      postgres-shared:
+        condition: service_healthy
+      temporal-elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./configs/postiz/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    networks:
+      - smb-net
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    container_name: demo-temporal-ui
+    restart: unless-stopped
+    ports:
+      - "${TEMPORAL_UI_PORT:-8088}:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://127.0.0.1:3000
+    depends_on:
+      temporal:
+        condition: service_healthy
+    networks:
+      - smb-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ─── Postiz — Social scheduling ────────────────────────────────────────
+  postiz:
+    <<: *postiz-common
+    container_name: demo-postiz
+    ports:
+      - "${POSTIZ_PORT:-4007}:5000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:5000/',res=>process.exit(res.statusCode<500?0:1));r.on('error',()=>process.exit(1));r.setTimeout(4000,()=>{r.destroy();process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    depends_on:
+      postgres-shared:
+        condition: service_healthy
+      shared-redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # ─── Muslimbot voice worker (optional — profile: voice) ───────────────
+  muslimbot-voice-worker:
+    build:
+      context: ./Muslimbot-voice-agent
+      dockerfile: Dockerfile
+    image: muslimbot-voice-agent:latest
+    container_name: demo-muslimbot
+    restart: unless-stopped
+    command: ["python", "agent.py", "start"]
+    env_file: .env
+    environment:
+      - ERPNEXT_URL=http://frappe-web:8000
+      - N8N_URL=http://n8n:5678
+      - REDIS_URL=redis://redis-cache:6379/2
+      - TENANT_ID=${TENANT_ID:-default}
+      - LIVEKIT_URL=${LIVEKIT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
+    networks:
+      - smb-net
+    depends_on:
+      frappe-web:
+        condition: service_started
+      n8n:
+        condition: service_started
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  mariadb-data:
+  postgres-shared-data:
+  frappe-sites:
+  frappe-logs:
+  redis-queue-data:
+  n8n-data:
+  chatwoot-storage:
+  postiz-config:
+  postiz-uploads:
+  temporal-elasticsearch-data:
+
+networks:
+  smb-net:
+    name: liteerp_smb-net
+    driver: bridge

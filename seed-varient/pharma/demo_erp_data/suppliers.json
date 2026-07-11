@@ -1,0 +1,44 @@
+[
+  {
+    "supplier_name": "Square Pharmaceuticals Ltd",
+    "supplier_group": "Pharma Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755100001",
+    "email": "orders@squarepharma.com"
+  },
+  {
+    "supplier_name": "Beximco Pharmaceuticals Ltd",
+    "supplier_group": "Pharma Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755100002",
+    "email": "supply@beximcopharma.com"
+  },
+  {
+    "supplier_name": "Renata Ltd",
+    "supplier_group": "Pharma Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755100003",
+    "email": "orders@renata.com"
+  },
+  {
+    "supplier_name": "Healthcare Pharmaceuticals",
+    "supplier_group": "Pharma Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755100004",
+    "email": "supply@healthcarepharma.com"
+  },
+  {
+    "supplier_name": "Bengal Agro Distributors",
+    "supplier_group": "FMCG Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755100005",
+    "email": "sales@bengalagro.com"
+  },
+  {
+    "supplier_name": "Unilever BD Distributors",
+    "supplier_group": "FMCG Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755100006",
+    "email": "supply@unileverbd.com"
+  }
+]

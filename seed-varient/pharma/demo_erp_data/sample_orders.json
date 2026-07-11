@@ -1,0 +1,87 @@
+[
+  {
+    "customer": "Rahim Uddin",
+    "items": [
+      {"item_code": "NAPA-500", "qty": 5, "rate": 2},
+      {"item_code": "SERGEL-20", "qty": 2, "rate": 6},
+      {"item_code": "CEEVIT-250", "qty": 1, "rate": 5}
+    ],
+    "days_ago": 2,
+    "paid": true
+  },
+  {
+    "customer": "Fatema Begum",
+    "items": [
+      {"item_code": "AMDOCAL-5", "qty": 3, "rate": 10},
+      {"item_code": "ATORVA-10", "qty": 3, "rate": 15},
+      {"item_code": "COMET-500", "qty": 3, "rate": 4}
+    ],
+    "days_ago": 5,
+    "paid": true
+  },
+  {
+    "customer": "City Clinic",
+    "items": [
+      {"item_code": "AMOXIL-500", "qty": 50, "rate": 12},
+      {"item_code": "NAPA-500", "qty": 100, "rate": 2},
+      {"item_code": "SERGEL-20", "qty": 30, "rate": 6},
+      {"item_code": "FLAGYL-400", "qty": 40, "rate": 5},
+      {"item_code": "SANITIZER-250ML", "qty": 20, "rate": 135}
+    ],
+    "days_ago": 10,
+    "paid": false
+  },
+  {
+    "customer": "Walk-in Customer",
+    "items": [
+      {"item_code": "ACE-PLUS", "qty": 2, "rate": 3},
+      {"item_code": "COUGH-SYRUP", "qty": 1, "rate": 65}
+    ],
+    "days_ago": 1,
+    "paid": true
+  },
+  {
+    "customer": "Kamal Hossain",
+    "items": [
+      {"item_code": "RICE-BASMATI-5KG", "qty": 2, "rate": 850},
+      {"item_code": "OIL-MUSTARD-1L", "qty": 2, "rate": 210},
+      {"item_code": "DAL-MASOOR-1KG", "qty": 3, "rate": 145},
+      {"item_code": "TURMERIC-200G", "qty": 2, "rate": 65},
+      {"item_code": "SOAP-LUX-3PK", "qty": 1, "rate": 90}
+    ],
+    "days_ago": 3,
+    "paid": true
+  },
+  {
+    "customer": "Dhaka Grocery Mart",
+    "items": [
+      {"item_code": "RICE-MINIKET-10KG", "qty": 10, "rate": 720},
+      {"item_code": "OIL-MUSTARD-1L", "qty": 20, "rate": 210},
+      {"item_code": "TURMERIC-200G", "qty": 15, "rate": 65},
+      {"item_code": "CHILI-200G", "qty": 15, "rate": 55}
+    ],
+    "days_ago": 15,
+    "paid": false
+  },
+  {
+    "customer": "Nasreen Akter",
+    "items": [
+      {"item_code": "CALBO-D", "qty": 2, "rate": 8},
+      {"item_code": "FEROSUL", "qty": 2, "rate": 6},
+      {"item_code": "MILK-FRESH-1L", "qty": 3, "rate": 85}
+    ],
+    "days_ago": 7,
+    "paid": true
+  },
+  {
+    "customer": "Green Valley Restaurant",
+    "items": [
+      {"item_code": "RICE-BASMATI-5KG", "qty": 5, "rate": 850},
+      {"item_code": "DAL-MASOOR-1KG", "qty": 10, "rate": 145},
+      {"item_code": "OIL-MUSTARD-1L", "qty": 5, "rate": 210},
+      {"item_code": "WATER-500ML", "qty": 48, "rate": 20}
+    ],
+    "days_ago": 8,
+    "paid": true
+  }
+]

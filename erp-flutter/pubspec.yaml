@@ -1,0 +1,35 @@
+name: small_erp
+description: "MuslimBot — native mobile super-app for the Frappe/ERPNext ecosystem."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # State management (matches frappe_mobile_sdk; minimizes integration friction)
+  provider: ^6.1.2
+  # Networking
+  http: ^1.2.1
+  # Localization / formatting (₹ currency, Asia/Dhaka dates, en/bn)
+  intl: ^0.19.0
+  # Routing + deep links
+  go_router: ^14.6.2
+  # Secure credential/session storage
+  flutter_secure_storage: ^9.2.2
+  # Tier-3: embed the full ERPNext desk/ops (WebView) with authenticated cookies
+  webview_flutter: ^4.10.0
+  webview_cookie_manager: ^2.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

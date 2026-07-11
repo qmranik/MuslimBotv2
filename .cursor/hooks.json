@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "ironbee hook session-start --client cursor"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "ironbee hook activity-start --client cursor"
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "ironbee hook require-verification --client cursor --soft",
+        "matcher": "MCP:(bdt|ndt|bedt|adt)_.*",
+        "failClosed": false
+      },
+      {
+        "command": "ironbee hook require-verdict --client cursor --soft",
+        "matcher": "Write|StrReplace|Delete",
+        "failClosed": false
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "ironbee hook clear-verdict --client cursor",
+        "matcher": "Write|StrReplace|Delete"
+      },
+      {
+        "command": "ironbee hook track-action --client cursor"
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "ironbee hook track-action --client cursor"
+      }
+    ],
+    "stop": [
+      {
+        "command": "ironbee hook activity-end --client cursor"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "ironbee hook session-end --client cursor"
+      }
+    ]
+  }
+}

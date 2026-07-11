@@ -1,0 +1,50 @@
+[
+  {
+    "supplier_name": "Lenovo Bangladesh Authorized",
+    "supplier_group": "Brand Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755000001",
+    "email": "orders@lenovobd.com",
+    "items": ["LAPTOP-T14S", "LAPTOP-X1C-G12"]
+  },
+  {
+    "supplier_name": "ASUS BD Official",
+    "supplier_group": "Brand Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755000002",
+    "email": "sales@asusbd.com",
+    "items": ["LAPTOP-ASUS-TUF"]
+  },
+  {
+    "supplier_name": "Techland BD",
+    "supplier_group": "Authorized Dealer",
+    "supplier_type": "Company",
+    "phone": "+8801755000003",
+    "email": "wholesale@techlandbd.com",
+    "items": ["GPU-RTX4060", "GPU-RTX4070", "RAM-DDR5-16", "RAM-DDR5-32", "SSD-NVME-1TB", "SSD-NVME-512"]
+  },
+  {
+    "supplier_name": "Global Brand Pvt Ltd",
+    "supplier_group": "Brand Distributor",
+    "supplier_type": "Company",
+    "phone": "+8801755000004",
+    "email": "supply@globalbrandbd.com",
+    "items": ["MON-27-4K-LG", "MON-24-FHD-DELL", "MON-34-UW-SAMSUNG"]
+  },
+  {
+    "supplier_name": "Peripherals World",
+    "supplier_group": "Authorized Dealer",
+    "supplier_type": "Company",
+    "phone": "+8801755000005",
+    "email": "orders@peripheralsworld.com",
+    "items": ["KB-MECH-RAPOO", "KB-WIRELESS-LOGI", "MOUSE-GAMING-REDRAGON", "HEADSET-A4TECH", "WEBCAM-LOGITECH"]
+  },
+  {
+    "supplier_name": "Power Systems BD",
+    "supplier_group": "Authorized Dealer",
+    "supplier_type": "Company",
+    "phone": "+8801755000006",
+    "email": "info@powersystemsbd.com",
+    "items": ["UPS-1200VA", "UPS-650VA", "PSU-650W"]
+  }
+]

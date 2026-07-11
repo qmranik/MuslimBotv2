@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+# Fail-fast per component (MUSLIMBOT_PRODUCTION_PLAN W0.2).
+jobs:
+  orchestrator:
+    name: go-orchestrator (vet · build · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go-orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go-orchestrator/go.sum
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+
+  mobile:
+    name: erp-flutter (analyze · test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: erp-flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  small_erp:
+    name: small_erp (py-compile · ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile $(git ls-files 'small_erp/**/*.py')
+      - run: pipx run ruff check small_erp || true  # advisory until rules agreed
+
+  generative_ui:
+    name: generative-ui (lint · build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: generative-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: generative-ui/package-lock.json
+      - run: npm ci || npm install
+      - run: npm run lint --if-present
+      - run: npm run build --if-present
+
+  voice_agent:
+    name: Muslimbot-voice-agent (py-compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m py_compile $(git ls-files 'Muslimbot-voice-agent/**/*.py')
+
+  secrets_scan:
+    name: gitleaks (no plaintext secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml

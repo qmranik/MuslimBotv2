@@ -1,0 +1,199 @@
+# docker-compose.extended.yml
+# ─────────────────────────────────────────────────────────────────
+# Platform Edge Layer: Authentik (IdP) + Traefik (Reverse Proxy)
+#
+# This compose file extends the base docker-compose.local.yml with:
+#   1. platform-postgres  — Shared DB for Authentik + Go orchestrator
+#   2. platform-redis     — Authentik session cache & token validation
+#   3. authentik-server   — Identity Provider (OIDC, ForwardAuth)
+#   4. authentik-worker   — Authentik background tasks
+#   5. traefik            — Edge proxy with ForwardAuth middleware
+#
+# Auth Flow:
+#   Browser → Traefik (:443) → ForwardAuth → Authentik validates cookie
+#   → Traefik injects X-authentik-* headers → Go Orchestrator
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml -f docker-compose.extended.yml up -d
+# ─────────────────────────────────────────────────────────────────
+
+services:
+  # ── State Layer ──────────────────────────────────────────────────
+
+  platform-postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: liteerp_admin
+      POSTGRES_PASSWORD: ${DB_PASS:-changeme_in_production}
+      POSTGRES_DB: authentik_db
+    volumes:
+      - platform_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liteerp_admin -d authentik_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-net
+
+  platform-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: --save 60 1 --loglevel warning --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - platform_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-net
+
+  # ── Identity Provider (Authentik) ────────────────────────────────
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:latest
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: platform-redis
+      AUTHENTIK_POSTGRESQL__HOST: platform-postgres
+      AUTHENTIK_POSTGRESQL__USER: liteerp_admin
+      AUTHENTIK_POSTGRESQL__NAME: authentik_db
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${DB_PASS:-changeme_in_production}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-change-this-to-a-long-random-string}
+      # Disable Authentik's own error reporting
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      # Authentik Web UI / API
+      - "traefik.http.routers.authentik.rule=Host(`auth.smb.localhost`)"
+      - "traefik.http.routers.authentik.entrypoints=websecure"
+      - "traefik.http.routers.authentik.tls=true"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+      # Authentik Outpost (ForwardAuth target)
+      - "traefik.http.routers.authentik-outpost.rule=HostRegexp(`{host:.+}`) && PathPrefix(`/outpost.goauthentik.io/`)"
+      - "traefik.http.routers.authentik-outpost.entrypoints=websecure"
+      - "traefik.http.routers.authentik-outpost.tls=true"
+      - "traefik.http.services.authentik-outpost.loadbalancer.server.port=9000"
+    networks:
+      - platform-net
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:latest
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: platform-redis
+      AUTHENTIK_POSTGRESQL__HOST: platform-postgres
+      AUTHENTIK_POSTGRESQL__USER: liteerp_admin
+      AUTHENTIK_POSTGRESQL__NAME: authentik_db
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${DB_PASS:-changeme_in_production}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-change-this-to-a-long-random-string}
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+      platform-redis:
+        condition: service_healthy
+    networks:
+      - platform-net
+
+  # ── Edge Proxy (Traefik) ─────────────────────────────────────────
+
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    command:
+      # API & Dashboard
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      # Docker provider — auto-discover services via labels
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=platform-net"
+      # File provider — for dynamic middleware config
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--providers.file.watch=true"
+      # Entrypoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      # TLS — auto-generate self-signed certs for .localhost domains
+      - "--entrypoints.websecure.http.tls=true"
+      # Logging
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8090:8080"   # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+    networks:
+      - platform-net
+
+  # ── Go Orchestrator ──────────────────────────────────────────────
+
+  go-orchestrator:
+    build:
+      context: ./go-orchestrator
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "host=platform-postgres user=liteerp_admin password=${DB_PASS:-changeme_in_production} dbname=authentik_db port=5432 sslmode=disable"
+      FRAPPE_URL: "http://frappe-web:8000"
+      FRAPPE_SITE_HOST: "small.localhost"
+      FRAPPE_API_KEY: ${FRAPPE_API_KEY:-}
+      FRAPPE_API_SECRET: ${FRAPPE_API_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CHATWOOT_URL: "http://chatwoot:3000"
+      CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
+      NEXTCLOUD_URL: "https://files.smb.localhost"
+      POSTIZ_URL: "https://social.smb.localhost"
+      AUTHENTIK_INTERNAL_URL: "http://authentik-server:9000"
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      GCP_LOCATION: ${GCP_LOCATION:-}
+      GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-}
+      GCP_RAG_CORPUS_ID: ${GCP_RAG_CORPUS_ID:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis-cache:6379/2}
+    depends_on:
+      platform-postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.orchestrator.rule=Host(`api.smb.localhost`)"
+      - "traefik.http.routers.orchestrator.entrypoints=websecure"
+      - "traefik.http.routers.orchestrator.tls=true"
+      - "traefik.http.routers.orchestrator.middlewares=authentik-forwardauth@file"
+      - "traefik.http.services.orchestrator.loadbalancer.server.port=8080"
+    networks:
+      - platform-net
+      - smb-net-local
+
+volumes:
+  platform_pg_data:
+  platform_redis_data:
+  authentik_media:
+  authentik_templates:
+
+networks:
+  platform-net:
+    driver: bridge
+  smb-net-local:
+    external: true
+    name: liteerp_smb-net-local

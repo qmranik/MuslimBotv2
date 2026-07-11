@@ -1,0 +1,724 @@
+{#
+    Small ERP — Base Layout
+    Shared shell: sidebar nav, topbar, bottom navigation (mobile), content area, toast notifications.
+    All page content loads via HTMX into #main-content.
+#}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>{{ title or "Small ERP" }} — Business Manager</title>
+
+    <link rel="stylesheet" href="/assets/small_erp/css/small-erp.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+
+    {# CSRF token for API calls #}
+    <script>
+        window._csrf_token = "{{ csrf_token or '' }}";
+        window._user_can_delete = {{ 'true' if user_can_delete_customer() else 'false' }};
+        window._user_can_cancel_invoice = {{ 'true' if user_can_cancel_invoice() else 'false' }};
+    </script>
+
+    {# Lucide Icons via CDN #}
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+    <style>
+        /* ─── CSS Custom Properties (Theme) ─────────────────────────── */
+        :root {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-sidebar: #0f172a;
+            --bg-sidebar-hover: #1e293b;
+            --bg-sidebar-active: #334155;
+
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --text-sidebar: #94a3b8;
+            --text-sidebar-active: #f8fafc;
+
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+            --accent-light: #dbeafe;
+
+            --success: #16a34a;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --info: #2563eb;
+
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+
+            --shadow-sm: 0 1px 2px rgba(15,23,42,0.05);
+            --shadow-md: 0 4px 6px -1px rgba(15,23,42,0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(15,23,42,0.1);
+
+            --sidebar-width: 240px;
+            --topbar-height: 56px;
+
+            --font-body: 'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* ─── App Shell ─────────────────────────────────────────────── */
+        .app-shell {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) 1fr;
+            grid-template-rows: var(--topbar-height) 1fr;
+            height: 100vh;
+            transition: grid-template-columns 0.2s ease;
+        }
+
+        .app-shell.sidebar-collapsed {
+            grid-template-columns: 56px 1fr;
+        }
+
+        /* ─── Sidebar (Desktop) ──────────────────────────────────────── */
+        .sidebar {
+            grid-row: 1 / -1;
+            background: var(--bg-sidebar);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+            z-index: 100;
+            transition: width 0.2s ease;
+            width: auto;
+        }
+
+        .sidebar-brand {
+            padding: 16px 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            position: relative;
+        }
+
+        .sidebar-brand .brand-icon {
+            width: 32px; height: 32px;
+            background: var(--accent);
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: 700; font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .sidebar-brand .brand-text {
+            color: var(--text-sidebar-active);
+            font-weight: 600;
+            font-size: 16px;
+            white-space: nowrap;
+            overflow: hidden;
+            transition: opacity 0.2s;
+        }
+
+        .collapse-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: var(--radius-sm);
+            color: var(--text-sidebar);
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .collapse-btn:hover {
+            color: white;
+            background: rgba(255,255,255,0.12);
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 12px;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            flex-shrink: 0;
+        }
+
+        /* Collapsed sidebar hides text */
+        .sidebar.collapsed .brand-text,
+        .sidebar.collapsed .sidebar-section,
+        .sidebar.collapsed .nav-item span,
+        .sidebar.collapsed .nav-badge { display: none; }
+        .sidebar.collapsed .nav-item { justify-content: center; padding: 10px 0; }
+        .sidebar.collapsed .nav-item i { margin: 0; }
+        .sidebar.collapsed .sidebar-brand { justify-content: center; padding: 16px 8px; }
+        .sidebar.collapsed .sidebar-footer { justify-content: center; padding: 12px 8px; }
+
+        .sidebar-nav { padding: 12px 8px; flex: 1; min-height: 0; }
+
+        .sidebar-section {
+            padding: 12px 12px 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #64748b;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            color: var(--text-sidebar);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            margin-bottom: 2px;
+            white-space: nowrap;
+        }
+
+        .nav-item:hover {
+            background: var(--bg-sidebar-hover);
+            color: var(--text-sidebar-active);
+        }
+
+        .nav-item.active {
+            background: var(--bg-sidebar-active);
+            color: var(--text-sidebar-active);
+        }
+
+        .nav-item i { width: 18px; height: 18px; opacity: 0.7; flex-shrink: 0; }
+        .nav-item.active i { opacity: 1; }
+
+        .nav-badge {
+            margin-left: auto;
+            background: var(--danger);
+            color: white;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 1px 6px;
+            border-radius: 10px;
+        }
+
+        /* ─── Topbar ────────────────────────────────────────────────── */
+        .topbar {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            gap: 16px;
+        }
+
+        .topbar-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .topbar-search {
+            margin-left: auto;
+            position: relative;
+            width: 320px;
+        }
+
+        .topbar-search input {
+            width: 100%;
+            padding: 8px 12px 8px 36px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            transition: all 0.15s;
+        }
+
+        .topbar-search input:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-light);
+            background: white;
+        }
+
+        .topbar-search .search-icon {
+            position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+            width: 16px; height: 16px; color: var(--text-muted);
+        }
+
+        .topbar-user { display: flex; align-items: center; gap: 8px; cursor: pointer; position: relative; }
+
+        .user-avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: #e2e8f0; color: var(--text-primary);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 600; border: 1px solid var(--border);
+        }
+
+        /* ─── User Dropdown Menu ───────────────────────────────────── */
+        .user-dropdown {
+            position: absolute; top: calc(100% + 8px); right: 0;
+            background: white; border: 1px solid var(--border);
+            border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+            min-width: 220px; z-index: 300; display: none;
+            padding: 8px 0;
+        }
+        .user-dropdown.open { display: block; }
+        .user-dropdown-header {
+            padding: 12px 16px; border-bottom: 1px solid var(--border-light);
+        }
+        .user-dropdown-header .user-fullname { font-weight: 600; font-size: 14px; }
+        .user-dropdown-header .user-email { font-size: 12px; color: var(--text-muted); }
+        .user-dropdown-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 16px; text-decoration: none; color: var(--text-primary);
+            font-size: 13px; cursor: pointer; border: none; background: none; width: 100%;
+            text-align: left; font-family: var(--font-body);
+        }
+        .user-dropdown-item:hover { background: var(--bg-primary); }
+        .user-dropdown-item i { width: 16px; height: 16px; color: var(--text-muted); }
+        .user-dropdown-divider { height: 1px; background: var(--border-light); margin: 4px 0; }
+
+        /* ─── Main Content Area ─────────────────────────────────────── */
+        .main-content {
+            overflow-y: auto;
+            padding: 24px;
+            background: var(--bg-primary);
+        }
+
+        /* ─── Card Component ────────────────────────────────────────── */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-sm);
+        }
+        .card-header {
+            padding: 16px 20px; border-bottom: 1px solid var(--border-light);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .card-header h3 { font-size: 15px; font-weight: 600; }
+        .card-body { padding: 20px; }
+
+        /* ─── KPI Cards Grid ────────────────────────────────────────── */
+        .kpi-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px; margin-bottom: 24px;
+        }
+        .kpi-card {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: var(--radius-md); padding: 20px; box-shadow: var(--shadow-sm);
+        }
+        .kpi-label {
+            font-size: 12px; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+        }
+        .kpi-value { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+        .kpi-value.danger { color: var(--danger); }
+        .kpi-value.success { color: var(--success); }
+
+        /* ─── Data Table ────────────────────────────────────────────── */
+        .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+        .data-table thead th {
+            padding: 12px 16px; text-align: left; font-weight: 600;
+            font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--text-muted); border-bottom: 1px solid var(--border);
+            background: #f8fafc; position: sticky; top: 0;
+        }
+        .data-table tbody td { padding: 12px 16px; border-bottom: 1px solid var(--border-light); vertical-align: middle; }
+        .data-table tbody tr:hover { background: var(--bg-primary); }
+        .data-table tbody tr { cursor: pointer; transition: background 0.1s; }
+
+        /* ─── Badges ────────────────────────────────────────────────── */
+        .badge {
+            display: inline-flex; align-items: center; padding: 2px 8px;
+            border-radius: 6px; font-size: 11.5px; font-weight: 600; line-height: 1.5;
+        }
+        .badge-success { background: #dcfce7; color: #15803d; }
+        .badge-warning { background: #fef3c7; color: #b45309; }
+        .badge-danger { background: #fee2e2; color: #b91c1c; }
+        .badge-primary { background: #dbeafe; color: #1d4ed8; }
+        .badge-secondary { background: #f1f5f9; color: #475569; }
+
+        /* ─── Buttons ───────────────────────────────────────────────── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 8px 16px; border-radius: var(--radius-sm);
+            font-size: 14px; font-weight: 500; font-family: var(--font-body);
+            border: none; cursor: pointer; transition: all 0.15s ease;
+            text-decoration: none; min-height: 36px; justify-content: center;
+        }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-secondary {
+            background: white; color: var(--text-primary); border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: var(--bg-primary); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-sm { padding: 6px 10px; font-size: 12.5px; }
+
+        /* ─── Forms ─────────────────────────────────────────────────── */
+        .form-group { margin-bottom: 16px; }
+        .form-label {
+            display: block; font-size: 13px; font-weight: 500;
+            color: var(--text-secondary); margin-bottom: 6px;
+        }
+        .form-control {
+            width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+            border-radius: var(--radius-sm); font-size: 14px;
+            font-family: var(--font-body); background: white; transition: border-color 0.15s;
+        }
+        .form-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+
+        /* ─── Modal/Drawer ──────────────────────────────────────────── */
+        .drawer-overlay {
+            position: fixed; inset: 0; background: rgba(15,23,42,0.4);
+            z-index: 400; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+        }
+        .drawer-overlay.open { opacity: 1; pointer-events: auto; }
+        .drawer {
+            position: fixed; top: 0; right: 0; width: 480px; max-width: 100vw;
+            height: 100vh; background: white; box-shadow: var(--shadow-lg);
+            z-index: 401; transform: translateX(100%);
+            transition: transform 0.25s ease; overflow-y: auto;
+        }
+        .drawer.open { transform: translateX(0); }
+        .drawer-header {
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            position: sticky; top: 0; background: white; z-index: 1;
+        }
+        .drawer-body { padding: 20px; }
+
+        /* ─── Toast Notifications ───────────────────────────────────── */
+        #toast-container {
+            position: fixed; top: 16px; right: 16px; z-index: 9999;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .toast {
+            padding: 12px 16px; border-radius: var(--radius-sm);
+            font-size: 13px; font-weight: 500; box-shadow: var(--shadow-lg);
+            animation: slideIn 0.3s ease; max-width: 360px; color: white;
+        }
+        .toast-success { background: #15803d; }
+        .toast-error { background: #b91c1c; }
+        .toast-info { background: #1d4ed8; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* ─── Spinner ───────────────────────────────────────────────── */
+        .spinner {
+            width: 18px; height: 18px; border: 2px solid var(--border);
+            border-top-color: var(--accent); border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ─── Mobile "More" Bottom Sheet ────────────────────────────── */
+        .bottom-sheet {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: white; border-top-left-radius: 16px; border-top-right-radius: 16px;
+            z-index: 500; transform: translateY(100%); transition: transform 0.3s ease;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+            padding: 16px 0 32px;
+        }
+        .bottom-sheet.open { transform: translateY(0); }
+        .sheet-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            z-index: 499; display: none;
+        }
+        .bottom-sheet.open + .sheet-overlay, .sheet-overlay.open { display: block; }
+        .sheet-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
+        .sheet-title { padding: 0 20px 12px; font-size: 15px; font-weight: 600; border-bottom: 1px solid var(--border-light); }
+        .sheet-item {
+            display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+            text-decoration: none; color: var(--text-primary); font-size: 15px; border-bottom: 1px solid var(--border-light);
+        }
+        .sheet-item i { color: var(--text-secondary); width: 20px; height: 20px; }
+
+        /* ─── Floating Search (Mobile) ─────────────────────────────── */
+        .mobile-search-fab {
+            display: none; position: fixed; bottom: 80px; right: 16px;
+            width: 48px; height: 48px; border-radius: 24px;
+            background: var(--accent); color: white; border: none;
+            align-items: center; justify-content: center;
+            box-shadow: var(--shadow-lg); z-index: 250;
+        }
+        .mobile-search-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: white; z-index: 600; display: none; flex-direction: column;
+            padding: 16px;
+        }
+        .mobile-search-overlay.open { display: flex; }
+        .mobile-search-header { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+
+        /* ─── Responsive Overrides ──────────────────────────────────── */
+        @media (max-width: 768px) {
+            .app-shell { grid-template-columns: 1fr; }
+            .sidebar { display: none !important; } /* Hide sidebar on mobile */
+            .topbar { padding: 0 16px; }
+            .topbar-search { display: none; } /* Hide global search on topbar */
+            .main-content { padding: 16px 12px; padding-bottom: 80px; } /* Spacing for bottom nav */
+            .mobile-search-fab { display: flex; }
+            .btn, .form-control, select.form-control { min-height: 44px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-shell" id="app-shell">
+        {# ─── Sidebar (Desktop only) ───────────────────────────────── #}
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">L</div>
+                <span class="brand-text">LITE ERP V2</span>
+            </div>
+            <div class="sidebar-nav">
+                <div class="sidebar-section">Main</div>
+                <a class="nav-item {{ 'active' if active_page == 'dashboard' }}" href="/ops">
+                    <i data-lucide="layout-dashboard"></i> <span>Dashboard</span>
+                </a>
+                <a class="nav-item {{ 'active' if active_page == 'pos' }}" href="/ops/pos">
+                    <i data-lucide="shopping-cart"></i> <span>Point of Sale</span>
+                </a>
+                <a class="nav-item {{ 'active' if active_page == 'orders' }}" href="/ops/orders">
+                    <i data-lucide="clipboard-list"></i> <span>Orders</span>
+                </a>
+
+                <div class="sidebar-section">Operations</div>
+                <a class="nav-item {{ 'active' if active_page == 'inventory' }}" href="/ops/inventory">
+                    <i data-lucide="package"></i> <span>Inventory</span>
+                    <span class="nav-badge" id="low-stock-badge" style="display:none;"></span>
+                </a>
+                <a class="nav-item {{ 'active' if active_page == 'customers' }}" href="/ops/customers">
+                    <i data-lucide="users"></i> <span>Customers</span>
+                </a>
+                <a class="nav-item {{ 'active' if active_page == 'accounting' }}" href="/ops/accounting">
+                    <i data-lucide="wallet"></i> <span>Accounting</span>
+                </a>
+
+                <div class="sidebar-section">AI & Tools</div>
+                <a class="nav-item {{ 'active' if active_page == 'ai' }}" href="/ops/ai">
+                    <i data-lucide="bot"></i> <span>AI Assistant</span>
+                </a>
+                <a class="nav-item {{ 'active' if active_page == 'settings' }}" href="/ops/settings">
+                    <i data-lucide="settings"></i> <span>Settings</span>
+                </a>
+            </div>
+            <div class="sidebar-footer">
+                <button class="collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebarCollapse()" title="Collapse sidebar" aria-label="Collapse sidebar">
+                    <i data-lucide="chevrons-left" id="sidebar-collapse-icon" style="width:18px;height:18px;"></i>
+                </button>
+            </div>
+        </nav>
+
+        {# ─── Topbar ───────────────────────────────────────────────── #}
+        <header class="topbar">
+            <div style="display:flex; align-items:center; gap:8px;">
+                {# Logo shown on mobile only #}
+                <div class="brand-icon mobile-only" style="width:28px; height:28px; background:var(--accent); color:white; border-radius:4px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px;">L</div>
+                <h1 class="topbar-title" id="page-title">{{ page_title or "Dashboard" }}</h1>
+            </div>
+
+            {# Desktop Search #}
+            <div class="topbar-search">
+                <i data-lucide="search" class="search-icon"></i>
+                <input type="text" placeholder="Search anything..."
+                       id="global-search"
+                       hx-post="/api/method/small_erp.api.ai_agent.smart_search"
+                       hx-trigger="keyup changed delay:400ms"
+                       hx-target="#search-results"
+                       hx-vals='js:{"query": document.getElementById("global-search").value}'>
+                <div id="search-results" style="position:absolute; top:100%; left:0; right:0; z-index:50;"></div>
+            </div>
+
+            <div class="topbar-user" style="margin-left: auto;" onclick="toggleUserMenu(event)">
+                <div class="user-avatar" id="user-avatar-btn">
+                    {{ frappe.session.user[0] | upper if frappe and frappe.session and frappe.session.user else 'A' }}
+                </div>
+                <i data-lucide="chevron-down" style="width:14px;height:14px;color:var(--text-muted);"></i>
+
+                <div class="user-dropdown" id="user-dropdown">
+                    <div class="user-dropdown-header">
+                        <div class="user-fullname" id="ud-fullname">{{ frappe.session.user if frappe and frappe.session else 'User' }}</div>
+                        <div class="user-email">{{ frappe.session.user if frappe and frappe.session else '' }}</div>
+                    </div>
+                    <a href="/ops/settings" class="user-dropdown-item">
+                        <i data-lucide="settings"></i> Settings
+                    </a>
+                    <div class="user-dropdown-divider"></div>
+                    <button class="user-dropdown-item" onclick="doLogout()" style="color:var(--danger);">
+                        <i data-lucide="log-out" style="color:var(--danger);"></i> Log Out
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        {# ─── Main Content Area ─────────────────────────────────────── #}
+        <main class="main-content" id="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    {# ─── Bottom Navigation (Mobile) ────────────────────────────────── #}
+    <nav class="bottom-nav">
+        <div class="bottom-nav-items">
+            <a href="/ops" class="bottom-nav-item {{ 'active' if active_page == 'dashboard' }}">
+                <i data-lucide="layout-dashboard"></i>
+                <span>Home</span>
+            </a>
+            <a href="/ops/inventory" class="bottom-nav-item {{ 'active' if active_page == 'inventory' }}">
+                <i data-lucide="package"></i>
+                <span>Stock</span>
+            </a>
+            <a href="/ops/orders" class="bottom-nav-item {{ 'active' if active_page == 'orders' }}">
+                <i data-lucide="clipboard-list"></i>
+                <span>Orders</span>
+            </a>
+            <a href="/ops/pos" class="bottom-nav-item {{ 'active' if active_page == 'pos' }}">
+                <i data-lucide="shopping-cart"></i>
+                <span>POS</span>
+            </a>
+            <a href="/ops/ai" class="bottom-nav-item {{ 'active' if active_page == 'ai' }}">
+                <i data-lucide="bot"></i>
+                <span>AI</span>
+            </a>
+            <button class="bottom-nav-item" onclick="toggleMoreSheet()">
+                <i data-lucide="more-horizontal"></i>
+                <span>More</span>
+            </button>
+        </div>
+    </nav>
+
+    {# ─── More Sheet (Mobile Bottom Menu) ───────────────────────────── #}
+    <div id="more-sheet" class="bottom-sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">More Options</div>
+        <a href="/ops/customers" class="sheet-item"><i data-lucide="users"></i> Customers</a>
+        <a href="/ops/accounting" class="sheet-item"><i data-lucide="wallet"></i> Accounting</a>
+        <a href="/ops/settings" class="sheet-item"><i data-lucide="settings"></i> Settings</a>
+        <button class="sheet-item" onclick="doLogout()" style="border:none;background:none;width:100%;text-align:left;font-size:15px;font-family:var(--font-body);color:var(--danger);cursor:pointer;">
+            <i data-lucide="log-out" style="color:var(--danger);"></i> Log Out
+        </button>
+    </div>
+    <div class="sheet-overlay" id="sheet-overlay" onclick="toggleMoreSheet()"></div>
+
+    {# ─── Floating Search FAB + Overlay (Mobile) ───────────────────── #}
+    <button class="mobile-search-fab" onclick="toggleMobileSearch()">
+        <i data-lucide="search"></i>
+    </button>
+    <div class="mobile-search-overlay" id="mobile-search-overlay">
+        <div class="mobile-search-header">
+            <button class="btn-secondary btn-sm" onclick="toggleMobileSearch()"><i data-lucide="arrow-left"></i></button>
+            <input type="text" class="form-control" id="mobile-global-search" placeholder="Search anything..." style="flex:1;"
+                   hx-post="/api/method/small_erp.api.ai_agent.smart_search"
+                   hx-trigger="keyup changed delay:400ms"
+                   hx-target="#mobile-search-results"
+                   hx-vals='js:{"query": document.getElementById("mobile-global-search").value}'>
+        </div>
+        <div id="mobile-search-results" style="overflow-y:auto; flex:1;"></div>
+    </div>
+
+    {# ─── Universal Elements (Toasts, Drawers) ──────────────────────── #}
+    <div id="toast-container"></div>
+
+    <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+    <div class="drawer" id="drawer">
+        <div class="drawer-header">
+            <h3 id="drawer-title">Details</h3>
+            <button class="btn-secondary btn-sm" onclick="closeDrawer()"><i data-lucide="x" style="width:16px;height:16px;"></i></button>
+        </div>
+        <div class="drawer-body" id="drawer-body"></div>
+    </div>
+
+    {# ─── Scripts ──────────────────────────────────────────────────── #}
+    <script src="/assets/small_erp/js/htmx.min.js?v=2"></script>
+    <script src="/assets/small_erp/js/small-erp.js?v=3"></script>
+
+    <script>
+        // Initialize Lucide icons
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+
+        // Re-init icons after HTMX swaps
+        document.body.addEventListener('htmx:afterSwap', function() {
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        });
+
+        // Floating mobile search toggle
+        function toggleMobileSearch() {
+            const overlay = document.getElementById('mobile-search-overlay');
+            const isOpen = overlay.classList.toggle('open');
+            if(isOpen) {
+                setTimeout(() => document.getElementById('mobile-global-search').focus(), 50);
+            }
+        }
+
+        // User dropdown menu
+        function toggleUserMenu(e) {
+            e.stopPropagation();
+            const dd = document.getElementById('user-dropdown');
+            dd.classList.toggle('open');
+        }
+        // Close on click outside
+        document.addEventListener('click', function(e) {
+            const dd = document.getElementById('user-dropdown');
+            if (dd && !e.target.closest('.topbar-user')) dd.classList.remove('open');
+        });
+
+        // Logout
+        function doLogout() {
+            fetch('/api/method/logout', {
+                method: 'POST',
+                headers: {
+                    'X-Frappe-CSRF-Token': getCSRFToken(),
+                }
+            }).then(() => {
+                window.location.href = '/login';
+            }).catch(() => {
+                window.location.href = '/login';
+            });
+        }
+
+        // Load user full name
+        (async function() {
+            try {
+                const currentUser = (window.frappe && frappe.session && frappe.session.user) || '';
+                if (!currentUser || currentUser === 'Guest') return;
+                const csrf = (window.frappe && frappe.csrf_token) || window._csrf_token || getCookie('csrf_token') || '';
+                const resp = await fetch('/api/method/frappe.client.get_value', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                        'X-Frappe-CSRF-Token': csrf,
+                    },
+                    body: 'doctype=User&filters=' + encodeURIComponent(JSON.stringify({name: currentUser})) + '&fieldname=full_name'
+                });
+                const data = await resp.json();
+                const fn = data.message && data.message.full_name;
+                if (fn) {
+                    const el = document.getElementById('ud-fullname');
+                    if (el) el.textContent = fn;
+                    // Also update avatar with first letter of full name
+                    const avatar = document.getElementById('user-avatar-btn');
+                    if (avatar) avatar.textContent = fn[0].toUpperCase();
+                }
+            } catch(e) {}
+        })();
+    </script>
+</body>
+</html>

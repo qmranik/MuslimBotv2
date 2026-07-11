@@ -1,0 +1,413 @@
+##############################################################################
+# Small ERP — Local Development Stack (laptop)
+#
+# HTMX /ops + generative-ui (Vite HMR) + n8n against vanilla ERPNext v15
+# small_erp source is volume-mounted — no image rebuild for Python/template edits
+#
+# Usage:
+#   cp .env.template .env
+#   docker compose -f docker-compose.local.yml up -d
+#   bash small_erp/scripts/install-local.sh
+#   # generative-ui: http://localhost:5173  |  /ops: http://localhost:8000/ops
+#
+# Optional profiles:
+#   docker compose -f docker-compose.local.yml --profile support up -d  # Chatwoot
+#   docker compose -f docker-compose.local.yml --profile voice up -d    # Muslimbot
+##############################################################################
+
+x-frappe-common: &frappe-common
+  image: frappe/erpnext:v15
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    - DB_HOST=mariadb
+    - DB_PORT=3306
+    - REDIS_CACHE=redis://redis-cache:6379
+    - REDIS_QUEUE=redis://redis-queue:6379
+    - REDIS_SOCKETIO=redis://redis-socketio:6379
+    - SOCKETIO_PORT=9000
+    - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+  volumes:
+    - ./small_erp/small_erp_app:/home/frappe/frappe-bench/apps/small_erp
+    - ./small_erp/small_erp_app/small_erp/finish_setup.py:/home/frappe/frappe-bench/apps/small_erp/small_erp/finish_setup.py:ro
+    - ./small_erp/small_erp_app/small_erp/seed_demo.py:/home/frappe/frappe-bench/apps/small_erp/small_erp/seed_demo.py:ro
+    - ./small_erp/small_erp_app/small_erp/seed_orgs.py:/home/frappe/frappe-bench/apps/small_erp/small_erp/seed_orgs.py:ro
+    - ./small_erp/small_erp_app/small_erp/seed_pharma.py:/home/frappe/frappe-bench/apps/small_erp/small_erp/seed_pharma.py:ro
+    - frappe-sites-local:/home/frappe/frappe-bench/sites
+    - frappe-logs-local:/home/frappe/frappe-bench/logs
+  networks:
+    - smb-net-local
+
+x-chatwoot-common: &chatwoot-common
+  image: chatwoot/chatwoot:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    RAILS_ENV: production
+    NODE_ENV: production
+    INSTALLATION_ENV: docker
+    POSTGRES_HOST: chatwoot-db
+    POSTGRES_USERNAME: chatwoot
+    POSTGRES_PASSWORD: ${CHATWOOT_DB_PASSWORD}
+    POSTGRES_DATABASE: chatwoot
+    REDIS_URL: redis://chatwoot-redis:6379
+    SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY}
+    FRONTEND_URL: ${CHATWOOT_FRONTEND_URL:-http://localhost:3000}
+    ENABLE_ACCOUNT_SIGNUP: "false"
+    FORCE_SSL: "false"
+  volumes:
+    - chatwoot-storage-local:/app/storage
+  networks:
+    - smb-net-local
+  profiles:
+    - support
+
+services:
+  # ─── MariaDB ──────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:10.11
+    container_name: local-mariadb
+    restart: unless-stopped
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+      - "--skip-character-set-client-handshake"
+      - "--skip-innodb-read-only-compressed"
+      - "--innodb-buffer-pool-size=${DB_BUFFER_POOL:-512M}"
+      - "--max-connections=150"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - mariadb-data-local:/var/lib/mysql
+    networks:
+      - smb-net-local
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # ─── Redis Trio (Frappe) ───────────────────────────────────────────────
+  redis-cache:
+    image: redis:7-alpine
+    container_name: local-redis-cache
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - smb-net-local
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+  redis-queue:
+    image: redis:7-alpine
+    container_name: local-redis-queue
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --save 60 1000 --appendonly yes
+    volumes:
+      - redis-queue-data-local:/data
+    networks:
+      - smb-net-local
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  redis-socketio:
+    image: redis:7-alpine
+    container_name: local-redis-socketio
+    restart: unless-stopped
+    command: redis-server --maxmemory 32mb --save "" --appendonly no
+    networks:
+      - smb-net-local
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+  # ─── Frappe Web + Workers ─────────────────────────────────────────────
+  frappe-web:
+    <<: *frappe-common
+    container_name: local-frappe-web
+    command: >
+      /home/frappe/frappe-bench/env/bin/gunicorn
+      --chdir=/home/frappe/frappe-bench/sites
+      --bind=0.0.0.0:8000
+      --workers=2
+      --threads=2
+      --worker-class=gthread
+      --worker-tmp-dir=/dev/shm
+      --timeout=120
+      --graceful-timeout=30
+      --reload
+      frappe.app:application
+    ports:
+      - "${FRAPPE_PORT:-8000}:8000"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
+      redis-socketio:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  frappe-worker-default:
+    <<: *frappe-common
+    container_name: local-frappe-worker-default
+    command: bench worker --queue default
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  frappe-worker-short:
+    <<: *frappe-common
+    container_name: local-frappe-worker-short
+    command: bench worker --queue short
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  frappe-worker-long:
+    <<: *frappe-common
+    container_name: local-frappe-worker-long
+    command: bench worker --queue long
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  frappe-scheduler:
+    <<: *frappe-common
+    container_name: local-frappe-scheduler
+    command: bench schedule
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  frappe-socketio:
+    <<: *frappe-common
+    container_name: local-frappe-socketio
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ─── n8n ─────────────────────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:1.64.3
+    container_name: local-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_HOST=localhost
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678
+      - DB_TYPE=sqlite
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - GENERIC_TIMEZONE=${TZ:-UTC}
+      - FRAPPE_URL=http://frappe-web:8000
+      - FRAPPE_API_KEY=${FRAPPE_API_KEY}
+      - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+    volumes:
+      - n8n-data-local:/home/node/.n8n
+    networks:
+      - smb-net-local
+    depends_on:
+      frappe-web:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ─── Generative UI (Vite dev server + HMR) ─────────────────────────────
+  generative-ui:
+    image: node:22-alpine
+    container_name: local-generative-ui
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- -H 0.0.0.0 -p 5173"
+    ports:
+      - "${GENERATIVE_UI_PORT:-5173}:5173"
+    environment:
+      - FRAPPE_URL=http://frappe-web:8000
+      - FRAPPE_SITE_HOST=${FRAPPE_SITE_NAME:-small.localhost}:8000
+      - FRAPPE_API_KEY=${FRAPPE_API_KEY}
+      - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+      - VITE_GEMINI_API_KEY=${VITE_GEMINI_API_KEY:-}
+      - ORCHESTRATOR_URL=http://go-orchestrator:8080
+      - VITE_LIVEKIT_URL=${LIVEKIT_URL:-}
+    volumes:
+      - ./generative-ui:/app
+      - generative-ui-node-modules:/app/node_modules
+    depends_on:
+      frappe-web:
+        condition: service_started
+    networks:
+      - smb-net-local
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # ─── Chatwoot (optional — profile: support) ───────────────────────────
+  chatwoot-db:
+    image: pgvector/pgvector:pg15
+    container_name: local-chatwoot-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatwoot
+      POSTGRES_PASSWORD: ${CHATWOOT_DB_PASSWORD}
+      POSTGRES_DB: chatwoot
+    volumes:
+      - chatwoot-db-data-local:/var/lib/postgresql/data
+    networks:
+      - smb-net-local
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatwoot -d chatwoot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - support
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  chatwoot-redis:
+    image: redis:7-alpine
+    container_name: local-chatwoot-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - smb-net-local
+    profiles:
+      - support
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  chatwoot-rails:
+    <<: *chatwoot-common
+    container_name: local-chatwoot
+    entrypoint: docker/entrypoints/rails.sh
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    ports:
+      - "${CHATWOOT_PORT:-3000}:3000"
+    depends_on:
+      chatwoot-db:
+        condition: service_healthy
+      chatwoot-redis:
+        condition: service_started
+    profiles:
+      - support
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  chatwoot-worker:
+    <<: *chatwoot-common
+    container_name: local-chatwoot-worker
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    depends_on:
+      chatwoot-db:
+        condition: service_healthy
+      chatwoot-redis:
+        condition: service_started
+      chatwoot-rails:
+        condition: service_started
+    profiles:
+      - support
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  # ─── Muslimbot voice worker (optional — profile: voice) ───────────────
+  muslimbot-voice-worker:
+    build:
+      context: ./Muslimbot-voice-agent
+      dockerfile: Dockerfile
+    image: muslimbot-voice-agent:latest
+    container_name: local-muslimbot
+    restart: unless-stopped
+    command: ["python", "agent.py", "start"]
+    env_file: .env
+    environment:
+      - ERPNEXT_URL=http://frappe-web:8000
+      - N8N_URL=http://n8n:5678
+      - REDIS_URL=redis://redis-cache:6379/2
+      - TENANT_ID=${TENANT_ID:-default}
+      - LIVEKIT_URL=${LIVEKIT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
+    networks:
+      - smb-net-local
+    depends_on:
+      frappe-web:
+        condition: service_started
+      n8n:
+        condition: service_started
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  mariadb-data-local:
+  frappe-sites-local:
+  frappe-logs-local:
+  redis-queue-data-local:
+  n8n-data-local:
+  generative-ui-node-modules:
+  chatwoot-db-data-local:
+  chatwoot-storage-local:
+
+networks:
+  smb-net-local:
+    name: liteerp_smb-net-local
+    driver: bridge

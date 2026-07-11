@@ -1,0 +1,67 @@
+# ─── Secrets & env (never commit) ───────────────────────────────────
+.env
+.env.*
+!.env.template
+**/.env
+**/.env.local
+generative-ui/.env
+small_erp/.env
+go-orchestrator/.env
+Muslimbot-voice-agent/.env
+erp-flutter/lib/app_config.dart
+cookie.txt
+*.pem
+*.key
+secrets.*
+*.enc.env
+
+# ─── Node ────────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+.next/
+dist/
+build/
+generative-ui/.next/
+*.tsbuildinfo
+
+# ─── Python ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Go ──────────────────────────────────────────────────────────────
+go-orchestrator/server
+go-orchestrator/*.test
+
+# ─── Flutter / Dart ──────────────────────────────────────────────────
+erp-flutter/build/
+erp-flutter/.dart_tool/
+erp-flutter/.flutter-plugins*
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+
+# ─── Backups / data / runtime ────────────────────────────────────────
+backups/
+*.sql.gz
+*.tar.gz
+audit-screenshots/
+qa_evidence/
+output/
+
+# ─── Editor / OS / tooling ───────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.iml
+open-computer-use/
+.browser-devtools-mcp/
+.ironbee/sessions/
+.ironbee/otel/
+.ironbee/config.local.json
+.ironbee/codex-threads.json
+.claude/settings.local.json

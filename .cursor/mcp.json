@@ -1,0 +1,66 @@
+{
+  "mcpServers": {
+    "frappe-dev": {
+      "command": "node",
+      "args": ["${workspaceFolder}/mcp-servers/frappe-dev-mcp/src/index.js"],
+      "env": {
+        "FRAPPE_PROJECT_ROOT": "${workspaceFolder}",
+        "FRAPPE_SITE": "small.localhost",
+        "FRAPPE_DOCKER_SERVICE": "frappe-web",
+        "FRAPPE_API_KEY": "${env:FRAPPE_API_KEY}",
+        "FRAPPE_API_SECRET": "${env:FRAPPE_API_SECRET}"
+      }
+    },
+    "frappe-state": {
+      "command": "python",
+      "args": ["${workspaceFolder}/mcp-servers/frappe-state-mcp/frappe_state_mcp.py"],
+      "env": {
+        "FRAPPE_PROJECT_ROOT": "${workspaceFolder}",
+        "FRAPPE_SITE": "small.localhost"
+      }
+    },
+    "postgres-mcp": {
+      "command": "node",
+      "args": ["${workspaceFolder}/mcp-servers/postgres-mcp/postgres-mcp.js"],
+      "env": {
+        "DATABASE_URL": "${env:DATABASE_URL}"
+      }
+    },
+    "codebase-mcp": {
+      "command": "node",
+      "args": ["${workspaceFolder}/mcp-servers/codebase-mcp/codebase-mcp.js"]
+    },
+    "playwright-mcp": {
+      "command": "node",
+      "args": ["${workspaceFolder}/mcp-servers/playwright-mcp/playwright-mcp.js"]
+    },
+    "cloud-run": {
+      "command": "npx",
+      "args": ["-y", "@google-cloud/cloud-run-mcp"],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${env:GOOGLE_CLOUD_PROJECT}",
+        "GOOGLE_CLOUD_REGION": "${env:GOOGLE_CLOUD_REGION}"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${workspaceFolder}"
+      ]
+    },
+    "browser-devtools": {
+      "command": "npx",
+      "args": ["-y", "@ironbee-ai/devtools"],
+      "env": {
+        "PLATFORM": "browser",
+        "BROWSER_HEADLESS_ENABLE": "true",
+        "BROWSER_PERSISTENT_ENABLE": "true",
+        "BROWSER_PERSISTENT_USER_DATA_DIR": "/Users/qmranik/development/DOS/liteERP/.browser-devtools-mcp",
+        "BROWSER_DEVTOOLS_INSTALL_CHROMIUM": "true",
+        "TOOL_NAME_PREFIX": "bdt_"
+      }
+    }
+  }
+}

@@ -1,0 +1,268 @@
+{%- extends "small_erp/templates/includes/base.html" -%}
+{%- set active_page = "customers" -%}
+{%- set page_title = "Customers" -%}
+
+{%- block content -%}
+<div id="customers-root">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+        <input type="text" class="form-control" style="max-width:300px;"
+               id="cust-search" placeholder="Search name, phone, or ID..."
+               hx-get="/api/method/small_erp.api.customers.get_customers"
+               hx-trigger="keyup changed delay:300ms, refreshCustomers"
+               hx-target="#cust-table-body"
+               hx-include="#cust-search"
+               hx-vals='js:{"search": document.getElementById("cust-search").value}'
+               hx-indicator="#cust-spinner">
+
+        <div style="flex:1;"></div>
+
+        <button class="btn btn-primary mobile-sticky-btn" onclick="openNewCustomerDrawer()">
+            <i data-lucide="user-plus" style="width:14px;height:14px;"></i> <span>Add Customer</span>
+        </button>
+    </div>
+
+    <div class="card">
+        <div style="overflow-x:auto;">
+            <table class="data-table responsive-card-table">
+                <thead>
+                    <tr>
+                        <th>Customer ID</th>
+                        <th>Customer</th>
+                        <th>Phone</th>
+                        <th>Group</th>
+                        <th style="text-align:right;" class="desktop-only">Orders</th>
+                        <th style="text-align:right;">Total Spent</th>
+                        <th style="text-align:right;">Outstanding</th>
+                    </tr>
+                </thead>
+                <tbody id="cust-table-body"
+                       hx-get="/api/method/small_erp.api.customers.get_customers"
+                       hx-trigger="load, refreshCustomers"
+                       hx-include="#cust-search"
+                       hx-vals='js:{"search": document.getElementById("cust-search").value}'
+                       hx-indicator="#cust-spinner">
+                    <tr><td colspan="7">
+                        <div class="content-loading" id="cust-spinner">
+                            <div class="spinner"></div><span>Loading customers...</span>
+                        </div>
+                    </td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="cust-pagination" style="padding:0 20px;"></div>
+    </div>
+</div>
+
+<script>
+document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.pathInfo.requestPath.includes('customers.get_customers')) {
+        try {
+            const resp = JSON.parse(evt.detail.xhr.responseText).message;
+            const tbody = document.getElementById('cust-table-body');
+
+            if (!resp.customers || resp.customers.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7">
+                    <div class="empty-state"><h4>No customers found</h4></div>
+                </td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = resp.customers.map(c => `
+                <tr onclick="viewCustomer('${c.name}')" style="cursor:pointer;">
+                    <td style="font-family:var(--font-mono);font-size:12px;">${c.name}</td>
+                    <td><strong>${c.customer_name}</strong></td>
+                    <td>${c.mobile_no || '—'}</td>
+                    <td><span class="badge badge-secondary">${c.customer_group || '—'}</span></td>
+                    <td style="text-align:right;" class="desktop-only">${c.total_orders}</td>
+                    <td style="text-align:right;font-weight:600;">${parseFloat(c.total_spent).toFixed(2)}</td>
+                    <td style="text-align:right;${c.outstanding > 0 ? 'color:var(--danger);font-weight:600;' : ''}">${parseFloat(c.outstanding).toFixed(2)}</td>
+                </tr>
+            `).join('');
+
+            renderPagination('cust-pagination', resp.page, resp.total_pages,
+                '/api/method/small_erp.api.customers.get_customers', '#cust-table-body', {
+                    search: document.getElementById('cust-search').value || '',
+                });
+        } catch(e) { console.error('Customers parse error', e); }
+    }
+});
+
+async function viewCustomer(name) {
+    openDrawer('Customer Detail');
+    try {
+        const resp = await frappeCall('small_erp.api.customers.get_customer_detail', {customer_name: name});
+        const c = resp.customer;
+        document.getElementById('drawer-body').innerHTML = `
+            <div style="margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:start;">
+                    <div>
+                        <h2 style="font-size:18px;font-weight:700;">${c.customer_name}</h2>
+                        <div style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);">${c.name}</div>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        <button class="btn btn-sm btn-secondary" onclick="editCustomer('${c.name}')">
+                            <i data-lucide="edit-2" style="width:13px;height:13px;"></i> Edit
+                        </button>
+                        ${window._user_can_delete ? `<button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.name}')">
+                            <i data-lucide="trash-2" style="width:13px;height:13px;"></i> Delete
+                        </button>` : ''}
+                    </div>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+                <div><span class="form-label">Phone</span><div>${c.mobile_no || '—'}</div></div>
+                <div><span class="form-label">Email</span><div>${c.email_id || '—'}</div></div>
+                <div><span class="form-label">Group</span><div>${c.customer_group}</div></div>
+                <div><span class="form-label">Territory</span><div>${c.territory}</div></div>
+            </div>
+            <h4 style="font-size:13px;font-weight:600;margin-bottom:8px;">Recent Invoices</h4>
+            <table class="data-table">
+                <thead><tr><th>Invoice</th><th>Date</th><th style="text-align:right;">Total</th><th>Status</th></tr></thead>
+                <tbody>
+                    ${(resp.recent_invoices || []).map(inv => {
+                        const paid = parseFloat(inv.outstanding_amount) <= 0;
+                        return `<tr>
+                            <td style="font-family:var(--font-mono);font-size:12px;">${inv.name}</td>
+                            <td>${inv.posting_date}</td>
+                            <td style="text-align:right;">${parseFloat(inv.grand_total).toFixed(2)}</td>
+                            <td><span class="badge badge-${paid ? 'success' : 'warning'}">${paid ? 'Paid' : 'Unpaid'}</span></td>
+                        </tr>`;
+                    }).join('') || '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text-muted);">No invoices yet</td></tr>'}
+                </tbody>
+            </table>
+        `;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+    } catch(e) { showToast('Failed to load customer', 'error'); }
+}
+
+async function editCustomer(name) {
+    openDrawer('Edit Customer');
+    document.getElementById('drawer-body').innerHTML = `
+        <div class="form-group">
+            <label class="form-label">Customer Name *</label>
+            <input type="text" class="form-control" id="edit-cust-name" value="${name}">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Phone Number</label>
+            <input type="tel" class="form-control" id="edit-cust-phone">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" id="edit-cust-email">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Customer Group</label>
+            <select class="form-control" id="edit-cust-group">
+                <option value="loading">Loading groups...</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="submitEditCustomer('${name}')">
+            Update Customer
+        </button>
+    `;
+    
+    try {
+        const [resp, groups] = await Promise.all([
+            frappeCall('small_erp.api.customers.get_customer_detail', {customer_name: name}),
+            frappeCall('small_erp.api.customers.get_customer_groups', {}, 'GET')
+        ]);
+        const c = resp.customer;
+        document.getElementById('edit-cust-name').value = c.customer_name;
+        document.getElementById('edit-cust-phone').value = c.mobile_no || '';
+        document.getElementById('edit-cust-email').value = c.email_id || '';
+        
+        const select = document.getElementById('edit-cust-group');
+        if (select) {
+            select.innerHTML = (groups || []).map(g => `<option value="${g.name}" ${g.name === c.customer_group ? 'selected' : ''}>${g.name}</option>`).join('');
+            if (!groups || groups.length === 0) {
+                select.innerHTML = `<option value="${c.customer_group}">${c.customer_group}</option>`;
+            }
+        }
+    } catch(e) {
+        showToast('Failed to load customer details', 'error');
+    }
+}
+
+async function submitEditCustomer(name) {
+    try {
+        const resp = await frappeCall('small_erp.api.customers.update_customer', {
+            customer: name,
+            customer_name: document.getElementById('edit-cust-name').value,
+            mobile_no: document.getElementById('edit-cust-phone').value,
+            email_id: document.getElementById('edit-cust-email').value,
+            customer_group: document.getElementById('edit-cust-group').value,
+        });
+        showToast('Customer updated', 'success');
+        closeDrawer();
+        htmx.trigger('#cust-table-body', 'refreshCustomers');
+    } catch(e) { showToast(e.message || 'Update failed', 'error'); }
+}
+
+async function deleteCustomer(name) {
+    if (!confirm('Are you sure you want to disable this customer?')) return;
+    try {
+        await frappeCall('small_erp.api.customers.delete_customer', {customer: name});
+        showToast('Customer disabled', 'success');
+        closeDrawer();
+        htmx.trigger('#cust-table-body', 'refreshCustomers');
+    } catch(e) { showToast(e.message || 'Delete failed', 'error'); }
+}
+
+async function openNewCustomerDrawer() {
+    openDrawer('New Customer');
+    document.getElementById('drawer-body').innerHTML = `
+        <div class="form-group">
+            <label class="form-label">Customer Name *</label>
+            <input type="text" class="form-control" id="new-cust-name">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Phone Number</label>
+            <input type="tel" class="form-control" id="new-cust-phone">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" id="new-cust-email">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Customer Group</label>
+            <select class="form-control" id="new-cust-group">
+                <option value="loading">Loading groups...</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px;" onclick="submitNewCustomer()">
+            Create Customer
+        </button>
+    `;
+    try {
+        const groups = await frappeCall('small_erp.api.customers.get_customer_groups', {}, 'GET');
+        const select = document.getElementById('new-cust-group');
+        if (select) {
+            select.innerHTML = (groups || []).map(g => `<option value="${g.name}" ${g.name === 'Individual' ? 'selected' : ''}>${g.name}</option>`).join('');
+            if (!groups || groups.length === 0) {
+                select.innerHTML = '<option value="All Customer Groups">All Customer Groups</option>';
+            }
+        }
+    } catch(e) {
+        const select = document.getElementById('new-cust-group');
+        if (select) select.innerHTML = '<option value="All Customer Groups">All Customer Groups</option>';
+    }
+}
+
+async function submitNewCustomer() {
+    const name = document.getElementById('new-cust-name').value;
+    if (!name) { showToast('Customer name is required', 'error'); return; }
+
+    try {
+        const resp = await frappeCall('small_erp.api.customers.create_customer', {
+            customer_name: name,
+            mobile_no: document.getElementById('new-cust-phone').value,
+            email_id: document.getElementById('new-cust-email').value,
+            customer_group: document.getElementById('new-cust-group').value,
+        });
+        showToast(`Customer ${resp.customer_name} created`, 'success');
+        closeDrawer();
+        htmx.trigger('#cust-table-body', 'refreshCustomers');
+    } catch(e) { showToast(e.message || 'Failed', 'error'); }
+}
+</script>
+{%- endblock -%}
