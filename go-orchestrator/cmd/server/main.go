@@ -11,40 +11,63 @@ import (
 	"muslimbot-orchestrator/internal/config"
 	"muslimbot-orchestrator/internal/events"
 	"muslimbot-orchestrator/internal/gateway"
+	"muslimbot-orchestrator/internal/observability"
 	"muslimbot-orchestrator/internal/portals"
 	"muslimbot-orchestrator/internal/store"
 	"muslimbot-orchestrator/internal/tenants"
 )
 
-func healthHandler(c *gin.Context) {
-	services := map[string]string{
-		"orchestrator": "online",
-		"frappe":       "offline",
-		"n8n":          "offline",
-		"chatwoot":     "offline",
-		"qdrant":       "offline",
+// probe does a short GET and reports online/offline for a dependency.
+func probe(url string) string {
+	client := &http.Client{Timeout: 2 * time.Second}
+	res, err := client.Get(url)
+	if err != nil {
+		return "offline"
 	}
+	res.Body.Close()
+	return "online"
+}
 
-	if res, err := http.Get("http://frappe-web:8000"); err == nil {
-		res.Body.Close()
-		services["frappe"] = "online"
+func healthHandler(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		services := map[string]string{
+			"orchestrator": "online",
+			"frappe":       probe(cfg.FrappeURL),
+			"kb_bff":       probe(cfg.KBBffURL + "/health"),
+		}
+		dbStatus := "unknown"
+		if store.DB != nil {
+			if sqlDB, err := store.DB.DB(); err == nil && sqlDB.Ping() == nil {
+				dbStatus = "online"
+			} else {
+				dbStatus = "offline"
+			}
+		}
+		services["platform_db"] = dbStatus
+
+		status := "healthy"
+		if services["frappe"] == "offline" {
+			status = "degraded"
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":    status,
+			"services":  services,
+			"models":    gin.H{"router": cfg.GeminiRouterModel, "voice": cfg.GeminiVoiceModel},
+			"timestamp": time.Now().Unix(),
+			"auth":      "authentik",
+		})
 	}
-	
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "healthy",
-		"services":  services,
-		"timestamp": time.Now().Unix(),
-		"auth":      "authentik",
-	})
 }
 
 func main() {
 	cfg := config.LoadConfig()
-	
+
 	// Initialize Postgres DB (shared with Authentik on platform-postgres)
 	store.InitDB()
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery(), observability.RequestLogger())
 
 	// Initialize service handlers
 	proxy, err := gateway.NewRouterProxy(cfg)
@@ -61,7 +84,7 @@ func main() {
 	v1 := r.Group("/v1")
 	{
 		// ── Public Endpoints (no auth required) ──────────────────
-		v1.GET("/sys/health", healthHandler)
+		v1.GET("/sys/health", healthHandler(cfg))
 
 		// ── Protected Endpoints ──────────────────────────────────
 		// All routes below require Authentik forward-auth headers.
@@ -125,7 +148,7 @@ func main() {
 			})
 
 			// Platform
-			api.GET("/platform/services", healthHandler)
+			api.GET("/platform/services", healthHandler(cfg))
 		}
 	}
 
