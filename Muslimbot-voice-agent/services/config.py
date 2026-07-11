@@ -24,6 +24,8 @@ LIVEKIT_AGENT_NAME: str = os.getenv("LIVEKIT_AGENT_NAME", "muslimbot")
 
 # KB / RAG
 TENANT_ID: str = os.getenv("TENANT_ID", "default")
+# Lowercase alias used by the route modules for the default-tenant fallback.
+tenant_id: str = TENANT_ID
 KB_BFF_API_KEY: str = os.getenv("KB_BFF_API_KEY", "")
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
 CORS_ORIGINS: list[str] = [
