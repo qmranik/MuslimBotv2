@@ -7,7 +7,7 @@ import frappe
 
 @frappe.whitelist()
 def get_item_categories() -> dict:
-    """Lightweight ERP health check used by /ops/ai connection status."""
+    """Lightweight ERP health check used by the mobile connection status."""
     frappe.has_permission("Item", "read", throw=True)
     groups = frappe.get_all(
         "Item Group",

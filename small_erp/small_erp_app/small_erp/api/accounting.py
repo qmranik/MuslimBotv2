@@ -3,7 +3,7 @@ Accounting API — simplified financial views for SMB operators.
 Wraps ERPNext's accounting engine into digestible HTMX endpoints.
 """
 import frappe
-from frappe.utils import nowdate, getdate, add_months, flt, fmt_money, cint
+from frappe.utils import nowdate, getdate, add_months, flt, cint
 
 
 @frappe.whitelist()
@@ -69,9 +69,9 @@ def get_profit_and_loss(period="this_month"):
         "period": period,
         "start_date": start,
         "end_date": end,
-        "income": {"value": flt(income, 2), "formatted": fmt_money(income, currency=currency)},
-        "expenses": {"value": flt(expenses, 2), "formatted": fmt_money(expenses, currency=currency)},
-        "net_profit": {"value": flt(net, 2), "formatted": fmt_money(net, currency=currency)},
+        "income": flt(income, 2),
+        "expenses": flt(expenses, 2),
+        "net_profit": flt(net, 2),
         "currency": currency,
     }
 

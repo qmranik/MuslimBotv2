@@ -27,17 +27,17 @@ class FrappeApiClient {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    if (sid != null && sid!.isNotEmpty) {
-      headers['Cookie'] = 'sid=$sid';
-    } else if (apiKey.isNotEmpty && apiSecret.isNotEmpty) {
+    if (apiKey.isNotEmpty && apiSecret.isNotEmpty) {
       headers['Authorization'] = 'token $apiKey:$apiSecret';
+    } else if (sid != null && sid!.isNotEmpty) {
+      headers['Cookie'] = 'sid=$sid';
     }
     return headers;
   }
 
   /// Login and retrieve API key and secret
   Future<void> login(String email, String password) async {
-    final uri = Uri.parse('$baseUrl/api/method/small_erp.api.auth.login_to_get_keys');
+    final uri = Uri.parse('$baseUrl/api/method/login');
     final response = await http.post(
       uri,
       headers: {'Accept': 'application/json'},

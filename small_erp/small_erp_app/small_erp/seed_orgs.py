@@ -43,7 +43,7 @@ def seed_organizations():
     print(f"\n  Companies: {tech_company}, {pharma_company}")
     print(f"  Default:   {tech_company}")
     print(f"  Login:     Administrator / admin")
-    print(f"  URL:       http://localhost:8000/ops\n")
+    print(f"  URL:       http://localhost:8000/app\n")
 
 
 def _cleanup():

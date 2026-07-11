@@ -7,6 +7,7 @@ import '../core/config/app_config.dart';
 import '../core/muslimbot/persona.dart';
 import '../core/theme/app_theme.dart';
 import '../core/providers/api_provider.dart';
+import '../core/frappe_engine/frappe_engine.dart';
 import 'router.dart';
 
 /// Root MuslimBot application: providers + themed [MaterialApp.router].
@@ -31,7 +32,12 @@ class _MuslimBotAppState extends State<MuslimBotApp> {
         ChangeNotifierProvider<AuthController>.value(value: widget.auth),
         ChangeNotifierProxyProvider<AuthController, ApiProvider>(
           create: (_) => ApiProvider(),
-          update: (_, auth, api) => api!..updateFromSession(auth.session),
+          update: (_, auth, api) {
+            if (auth.session != null) {
+              FrappeEngine.initialize(auth.session!);
+            }
+            return api!..updateFromSession(auth.session);
+          },
         ),
       ],
       child: MaterialApp.router(

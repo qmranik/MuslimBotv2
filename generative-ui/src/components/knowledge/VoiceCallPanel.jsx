@@ -3,7 +3,7 @@ import { Mic, MicOff, Phone, PhoneOff, Loader2 } from 'lucide-react';
 import { Room, RoomEvent, Track } from 'livekit-client';
 import { createVoiceSession } from '../../services/kbClient';
 
-const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || '';
+const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || '';
 
 export function VoiceCallPanel() {
   const roomRef = useRef(null);

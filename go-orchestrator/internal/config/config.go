@@ -24,6 +24,10 @@ type Config struct {
 
 	// n8n Workflows
 	N8NWebhookURL string
+	// Webhook aggregation (Chatwoot/Twilio/Stripe → per-tenant n8n).
+	N8NBaseURL     string // base n8n url; per-tenant path appended
+	N8NURLTemplate string // optional isolated pattern, e.g. http://n8n-{tenant}:5678
+	WebhookSecret  string // shared secret to verify inbound external webhooks
 
 	// Gemini AI
 	GeminiAPIKey string
@@ -71,7 +75,10 @@ func LoadConfig() *Config {
 		KBBffAPIKey: os.Getenv("KBBFF_API_KEY"),
 
 		// n8n
-		N8NWebhookURL: os.Getenv("N8N_WEBHOOK_URL"),
+		N8NWebhookURL:  os.Getenv("N8N_WEBHOOK_URL"),
+		N8NBaseURL:     envOr("N8N_BASE_URL", "http://n8n:5678"),
+		N8NURLTemplate: os.Getenv("N8N_URL_TEMPLATE"),
+		WebhookSecret:  os.Getenv("WEBHOOK_SECRET"),
 
 		// AI — default to GA flash for the router; override per-env to pin exact GA ids.
 		GeminiAPIKey:      os.Getenv("GEMINI_API_KEY"),

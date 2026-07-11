@@ -36,7 +36,7 @@ def query_assistant(question, context="general"):
 
 @frappe.whitelist()
 def get_assistant_status():
-    """Return Gemini / n8n connectivity for the /ops/ai status panel."""
+    """Return Gemini / n8n connectivity for the mobile status panel."""
     frappe.has_permission("Sales Invoice", throw=True)
     return ai_assistant_service.get_status()
 

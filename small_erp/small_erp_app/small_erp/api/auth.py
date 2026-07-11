@@ -64,12 +64,18 @@ def login_to_get_keys(usr, pwd):
         frappe.db.commit()
 
     # Ensure api_secret exists
-    api_secret = user_doc.get_password("api_secret")
+    api_secret = user_doc.get_password("api_secret", raise_exception=False)
     if not api_secret:
         # Generate new keys (the secret is not retrievable if never set)
         from frappe.core.doctype.user.user import generate_keys
 
-        api_secret = generate_keys(user_doc.name)
+        # Temporarily set the session user to bypass "Guest" permission errors during key generation
+        original_user = frappe.session.user
+        frappe.set_user(user_doc.name)
+        try:
+            api_secret = generate_keys(user_doc.name)
+        finally:
+            frappe.set_user(original_user)
         user_doc.reload()
         frappe.db.commit()
 

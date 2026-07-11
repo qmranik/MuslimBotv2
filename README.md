@@ -1,12 +1,11 @@
 # Small ERP (liteERP)
 
-AI-driven ERP for small organizations, built on ERPNext v15 with a standalone HTMX frontend at `/ops`, n8n automation, generative-ui chat-to-dashboard, Muslimbot voice + knowledge hub, and optional Chatwoot / Postiz in the demo stack.
+AI-driven ERP for small organizations, built on ERPNext v15, n8n automation, generative-ui chat-to-dashboard, Muslimbot voice + knowledge hub, and optional Chatwoot / Postiz in the demo stack.
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
-| **Small ERP** (`/ops`) | HTMX UI — POS, orders, inventory, accounting, AI assistant |
 | **ERPNext v15** | System of record (Frappe backend) |
 | **generative-ui** | React chat-to-dashboard (Gemini NLP router) |
 | **n8n** | AI workflows, webhooks, RAG orchestration |
@@ -30,7 +29,7 @@ bash small_erp/scripts/install-local.sh
 
 | URL | Service |
 |-----|---------|
-| http://localhost:8000/ops | Small ERP (HTMX) |
+| http://localhost:8000/app | ERPNext Desk |
 | http://localhost:5173 | Generative UI (Vite dev server) |
 | http://localhost:5678 | n8n |
 | http://localhost:8787/health | Muslimbot KB BFF |
@@ -75,7 +74,7 @@ docker compose --profile voice up -d   # optional
                            |
         +------------------+------------------+
         |                  |                  |
-   /ops (HTMX)      generative-ui:5173    Chatwoot / Postiz
+   /app (Desk)      generative-ui:5173    Chatwoot / Postiz
         |                  |                  |
         v                  v                  v
    [ frappe-web :8000 ]  /api → Frappe    webhooks
@@ -88,19 +87,11 @@ docker compose --profile voice up -d   # optional
             [ Workers ]
 ```
 
-SMB users are restricted to `/ops` (see [Standalone Mode](#standalone-mode) below). Administrators retain `/app` desk access.
+
 
 ---
 
-## Standalone Mode
 
-| Role | Desk (`/app`) | `/ops` | Login redirect |
-|------|---------------|--------|----------------|
-| SMB Operator | Blocked | Full | `/ops` |
-| SMB Manager | Blocked | Full | `/ops` |
-| Administrator / System Manager | Full | Full | `/app` |
-
----
 
 ## SaaS / Multi-Tenant (legacy scripts)
 

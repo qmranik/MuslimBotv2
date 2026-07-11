@@ -5,7 +5,7 @@
 
 ## What This Is
 
-**Small ERP** — a standalone HTMX frontend on ERPNext for small businesses. Users interact exclusively at `/ops` and never see the ERPNext desk.
+**Small ERP** — a Headless API backend layer on top of ERPNext. Mobile users interact exclusively via the `erp-flutter` application which consumes these custom endpoints. The legacy HTMX frontend has been deprecated.
 
 ## Quick Commands
 

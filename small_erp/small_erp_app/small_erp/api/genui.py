@@ -121,7 +121,7 @@ def get_portal_url(app):
     site_url = frappe.utils.get_url()
 
     portal_map = {
-        "erp-ops": f"{site_url}/ops",
+        "erp-ops": f"{site_url}/me",
         "n8n": frappe.conf.get("n8n_url") or frappe.local.conf.get("n8n_url") or "http://localhost:5678",
         "chatwoot": frappe.conf.get("chatwoot_frontend_url")
         or frappe.local.conf.get("chatwoot_frontend_url")

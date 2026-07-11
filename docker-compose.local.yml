@@ -136,17 +136,7 @@ services:
     <<: *frappe-common
     container_name: local-frappe-web
     command: >
-      /home/frappe/frappe-bench/env/bin/gunicorn
-      --chdir=/home/frappe/frappe-bench/sites
-      --bind=0.0.0.0:8000
-      --workers=2
-      --threads=2
-      --worker-class=gthread
-      --worker-tmp-dir=/dev/shm
-      --timeout=120
-      --graceful-timeout=30
-      --reload
-      frappe.app:application
+      sh -c "/home/frappe/frappe-bench/env/bin/pip install -e apps/small_erp --no-deps && /home/frappe/frappe-bench/env/bin/gunicorn --chdir=/home/frappe/frappe-bench/sites --bind=0.0.0.0:8000 --workers=2 --threads=2 --worker-class=gthread --worker-tmp-dir=/dev/shm --timeout=120 --graceful-timeout=30 --reload frappe.app:application"
     ports:
       - "${FRAPPE_PORT:-8000}:8000"
     depends_on:
@@ -166,7 +156,8 @@ services:
   frappe-worker-default:
     <<: *frappe-common
     container_name: local-frappe-worker-default
-    command: bench worker --queue default
+    command: >
+      sh -c "/home/frappe/frappe-bench/env/bin/pip install -e apps/small_erp --no-deps && bench worker --queue default"
     depends_on:
       frappe-web:
         condition: service_started

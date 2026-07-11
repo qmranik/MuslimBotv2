@@ -15,6 +15,7 @@ import (
 	"muslimbot-orchestrator/internal/portals"
 	"muslimbot-orchestrator/internal/store"
 	"muslimbot-orchestrator/internal/tenants"
+	"muslimbot-orchestrator/internal/webhooks"
 )
 
 // probe does a short GET and reports online/offline for a dependency.
@@ -80,11 +81,17 @@ func main() {
 	portalsHandler := portals.NewHandler(cfg)
 	eventsHandler := events.NewHandler(cfg)
 	tenantsHandler := tenants.NewHandler(cfg)
+	webhooksHandler := webhooks.NewHandler(cfg)
 
 	v1 := r.Group("/v1")
 	{
 		// ── Public Endpoints (no auth required) ──────────────────
 		v1.GET("/sys/health", healthHandler(cfg))
+
+		// Webhook aggregation ingress — external services (Chatwoot/Twilio/
+		// Stripe) call this; gated by a shared secret, not Authentik. Routes to
+		// the tenant's n8n (UNIFIED_SYSTEM_PLAN U1).
+		v1.POST("/webhooks/:source", webhooksHandler.Ingest)
 
 		// ── Protected Endpoints ──────────────────────────────────
 		// All routes below require Authentik forward-auth headers.

@@ -5,7 +5,7 @@ All functions are @frappe.whitelist() so HTMX can call them via POST.
 from datetime import datetime
 
 import frappe
-from frappe.utils import add_months, nowdate, add_days, getdate, flt, fmt_money
+from frappe.utils import add_months, nowdate, add_days, getdate, flt
 
 
 @frappe.whitelist()
@@ -66,12 +66,13 @@ def get_dashboard_kpis():
     currency = frappe.defaults.get_global_default("currency") or "BDT"
 
     return {
-        "revenue": {"value": flt(revenue, 2), "formatted": fmt_money(revenue, currency=currency), "label": "Revenue (This Month)"},
-        "orders": {"value": order_count, "label": "Orders (This Month)"},
-        "pending": {"value": pending_orders, "label": "Pending Orders"},
-        "low_stock": {"value": low_stock, "label": "Low Stock Items"},
-        "receivable": {"value": flt(receivable, 2), "formatted": fmt_money(receivable, currency=currency), "label": "Accounts Receivable"},
-        "customers": {"value": active_customers, "label": "Active Customers"},
+        "revenue": flt(revenue, 2),
+        "orders": order_count,
+        "pending": pending_orders,
+        "low_stock": low_stock,
+        "receivable": flt(receivable, 2),
+        "customers": active_customers,
+        "currency": currency,
     }
 
 
@@ -93,9 +94,9 @@ def get_recent_activity(limit=10):
     for inv in invoices:
         activities.append({
             "type": "invoice",
-            "icon": "receipt",
-            "title": f"Invoice {inv.name}",
-            "detail": f"{inv.customer_name} — {fmt_money(inv.grand_total)}",
+            "id": inv.name,
+            "customer_name": inv.customer_name,
+            "amount": flt(inv.grand_total, 2),
             "time": inv.creation,
         })
 
@@ -109,9 +110,8 @@ def get_recent_activity(limit=10):
     for se in stock_entries:
         activities.append({
             "type": "stock",
-            "icon": "package",
-            "title": f"Stock {se.stock_entry_type}",
-            "detail": se.name,
+            "id": se.name,
+            "stock_entry_type": se.stock_entry_type,
             "time": se.creation,
         })
 

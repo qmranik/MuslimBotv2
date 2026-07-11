@@ -1,8 +1,8 @@
 import React from 'react';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore';
 import { SecurePortal } from './SecurePortal';
-import { CommandCenter } from '../pages/CommandCenter';
-import { KnowledgeHub } from '../pages/KnowledgeHub';
+import { CommandCenter } from '../page-components/CommandCenter';
+import { KnowledgeHub } from '../page-components/KnowledgeHub';
 
 export function WorkspaceManager() {
   const mountedWorkspaces = useWorkspaceStore((s) => s.mountedWorkspaces);

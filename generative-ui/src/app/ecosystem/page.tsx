@@ -1,6 +1,6 @@
 "use client";
 
-import { MuslimBotEcosystem } from "../../pages/MuslimBotEcosystem";
+import { MuslimBotEcosystem } from "../../components/MuslimBotEcosystem";
 
 export default function EcosystemPage() {
   return (

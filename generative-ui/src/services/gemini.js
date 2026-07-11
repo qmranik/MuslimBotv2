@@ -98,7 +98,7 @@ export function getDataSourceStatus() {
 
 // Helper to get Gemini API Key from localStorage or environment
 export const getApiKey = () => {
-  return localStorage.getItem("gemini_api_key") || import.meta.env.VITE_GEMINI_API_KEY || "";
+  return localStorage.getItem("gemini_api_key") || process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
 };
 
 // Helper to save key
@@ -608,7 +608,7 @@ const runMockRouter = (query, db = null) => {
 export const runNLPRouter = async (query, history = []) => {
   // Prefer the server-side MuslimBot brain (keys stay server-side). Disable
   // with VITE_USE_SERVER_BRAIN=false for offline/local-only dev.
-  if (import.meta.env.VITE_USE_SERVER_BRAIN !== 'false') {
+  if ((process.env.NEXT_PUBLIC_USE_SERVER_BRAIN || process.env.VITE_USE_SERVER_BRAIN) !== 'false') {
     const server = await runServerRouter(query, history);
     if (server) return server;
   }

@@ -30,11 +30,11 @@ type ToolSpec struct {
 type toolRoute int
 
 const (
-	routeFrappe toolRoute = iota // call a small_erp.api.* method
-	routeKB                      // knowledge base RAG (KB BFF /chat)
-	routeN8N                     // n8n webhook (workflows, notifications, business AI)
-	routeLocal                   // synthesized locally (system_status)
-	routeUnsupported             // needs a surface not available here (calendar, desk submit)
+	routeFrappe      toolRoute = iota // call a small_erp.api.* method
+	routeKB                           // knowledge base RAG (KB BFF /chat)
+	routeN8N                          // n8n webhook (workflows, notifications, business AI)
+	routeLocal                        // synthesized locally (system_status)
+	routeUnsupported                  // needs a surface not available here (calendar, desk submit)
 )
 
 // Catalog is the canonical registry keyed by tool name.
@@ -156,8 +156,8 @@ func (e *Executor) Execute(ctx context.Context, tool string, params map[string]a
 		res.Data = data
 	case routeLocal:
 		payload, _ := json.Marshal(map[string]any{
-			"time":     time.Now().Format(time.RFC3339),
-			"tenant":   tenant,
+			"time":         time.Now().Format(time.RFC3339),
+			"tenant":       tenant,
 			"orchestrator": "online",
 		})
 		res.OK = true

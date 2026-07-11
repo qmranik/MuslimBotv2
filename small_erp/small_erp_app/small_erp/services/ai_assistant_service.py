@@ -23,7 +23,7 @@ Rules:
 - Use ONLY numbers and facts from the business data block. Never invent figures.
 - Be concise and actionable (2–6 sentences unless they ask for a list).
 - Use markdown lists when listing items or customers.
-- If data is missing, say what is missing and suggest where in /ops to look (POS, Inventory, Orders, Accounting).
+- If data is missing, say what is missing and suggest where to look in the mobile app (POS, Inventory, Orders, Accounting).
 - Do NOT mention Open WebUI, n8n internals, or API keys.
 - For store policy / returns / SOP questions: say that information is not in the ERP data and suggest checking company documentation or asking a manager.
 - Format money with the currency from the data block.
@@ -54,10 +54,10 @@ def _generative_ui_url() -> str:
 
 
 def get_surfaces() -> dict[str, Any]:
-    """Where each AI capability lives in the liteERP stack (for /ops/ai UI)."""
+    """Where each AI capability lives in the liteERP stack."""
     genui = _generative_ui_url()
     return {
-        "quick_chat": {"label": "Quick Chat", "path": "/ops/ai", "description": "ERP questions with live Gemini + ERP data"},
+        "quick_chat": {"label": "Quick Chat", "path": "/mobile", "description": "ERP questions with live Gemini + ERP data"},
         "command_center": {
             "label": "Command Center",
             "url": genui,
@@ -65,7 +65,7 @@ def get_surfaces() -> dict[str, Any]:
         },
         "pos_voice": {
             "label": "POS Voice Search",
-            "path": "/ops/pos",
+            "path": "/mobile",
             "description": "Type or dictate items at the register (e.g. '10 napa')",
         },
     }
@@ -265,7 +265,7 @@ def query_assistant(question: str, context: str = "general") -> dict[str, Any]:
 
 
 def get_status() -> dict[str, Any]:
-    """Connection panel payload for /ops/ai."""
+    """Connection panel payload for AI assistant."""
     gemini_configured = gemini_service.is_configured()
     gemini_health = (
         gemini_service.test_connection()

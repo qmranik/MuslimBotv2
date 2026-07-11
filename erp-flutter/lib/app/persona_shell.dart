@@ -8,6 +8,7 @@ import '../features/home/home_screen.dart';
 import '../features/portal/webview_page.dart';
 import '../features/settings/more_screen.dart';
 import '../shared/coming_soon.dart';
+import '../core/frappe_engine/frappe_engine.dart';
 
 class _Destination {
   final String label;
@@ -42,14 +43,7 @@ class _PersonaShellState extends State<PersonaShell> {
           _Destination('Home', Icons.home_rounded,
               (_, open) => HomeScreen(onOpenAssistant: open)),
           _Destination('Explore', Icons.grid_view_rounded,
-              (_, __) => const ComingSoon(
-                    title: 'Explore data',
-                    phase: 'P2',
-                    description:
-                        'Open and edit any Frappe DocType natively — the '
-                        'metadata engine (frappe_mobile_sdk) lands here.',
-                    icon: Icons.grid_view_rounded,
-                  )),
+              (_, __) => const ExploreTab()),
           _Destination('ERP Desk', Icons.dashboard_rounded,
               (_, __) => const PortalWebViewPage(appId: 'erp-ops', title: 'ERP Desk')),
           _Destination('More', Icons.more_horiz_rounded, (_, __) => const MoreScreen()),

@@ -7,18 +7,20 @@ export const WORKSPACE_URL_DEFAULTS = {
 
 export function getWorkspaceUrl(id) {
   const envMap = {
-    'erp-ops': import.meta.env.VITE_WS_ERP_URL,
-    automations: import.meta.env.VITE_WS_N8N_URL,
-    support: import.meta.env.VITE_WS_CHATWOOT_URL,
-    marketing: import.meta.env.VITE_WS_POSTIZ_URL,
+    'erp-ops': process.env.NEXT_PUBLIC_WS_ERP_URL || process.env.VITE_WS_ERP_URL,
+    automations: process.env.NEXT_PUBLIC_WS_N8N_URL || process.env.VITE_WS_N8N_URL,
+    support: process.env.NEXT_PUBLIC_WS_CHATWOOT_URL || process.env.VITE_WS_CHATWOOT_URL,
+    marketing: process.env.NEXT_PUBLIC_WS_POSTIZ_URL || process.env.VITE_WS_POSTIZ_URL,
   };
   return envMap[id] || WORKSPACE_URL_DEFAULTS[id] || '';
 }
 
 export function parseAllowedOrigins(raw) {
-  const value = raw || import.meta.env.VITE_PORTAL_ALLOWED_ORIGINS || 'localhost,.smb.localhost,.walshintegrated.com';
+  const envVal = process.env.NEXT_PUBLIC_PORTAL_ALLOWED_ORIGINS || process.env.VITE_PORTAL_ALLOWED_ORIGINS;
+  const value = raw || envVal || 'localhost,.smb.localhost,.walshintegrated.com';
   return value.split(',').map((s) => s.trim()).filter(Boolean);
 }
+
 
 export function isAllowedOrigin(origin, allowedSuffixes) {
   if (!origin) return false;

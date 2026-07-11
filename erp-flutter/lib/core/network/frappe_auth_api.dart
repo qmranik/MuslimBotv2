@@ -20,7 +20,7 @@ class FrappeAuthApi {
     required String user,
     required String password,
   }) async {
-    final uri = Uri.parse('${_root(baseUrl)}/api/method/small_erp.api.auth.login_to_get_keys');
+    final uri = Uri.parse('${_root(baseUrl)}/api/method/login');
     late http.Response res;
     try {
       res = await _client.post(

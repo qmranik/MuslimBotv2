@@ -86,7 +86,7 @@ class _AssistantSheetState extends State<AssistantSheet> {
 
     if (!mounted) return;
     setState(() {
-      _messages.add(_Msg(sender: _Sender.bot, text: _describe(d)));
+      _messages.add(_Msg(sender: _Sender.bot, text: _describe(d), descriptor: d));
       _sending = false;
     });
   }
@@ -264,7 +264,8 @@ enum _Sender { user, bot }
 class _Msg {
   final _Sender sender;
   final String text;
-  _Msg({required this.sender, required this.text});
+  final UiDescriptor? descriptor;
+  _Msg({required this.sender, required this.text, this.descriptor});
 }
 
 class _Bubble extends StatelessWidget {
@@ -290,12 +291,29 @@ class _Bubble extends StatelessWidget {
                   : const Color(0xFFEFEFF6),
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Text(
-          msg.text,
-          style: TextStyle(
-            color: isUser ? Colors.white : null,
-            height: 1.35,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              msg.text,
+              style: TextStyle(
+                color: isUser ? Colors.white : null,
+                height: 1.35,
+              ),
+            ),
+            if (msg.descriptor?.component == UiComponent.openDoc) ...[
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // In a real implementation this would push a frappe_mobile_sdk FormScreen
+                  // Navigator.of(context).push(MaterialPageRoute(builder: (_) => FormScreen(docType: msg.descriptor!.docType!)));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opening ${msg.descriptor!.docType} form pre-filled with ${msg.descriptor!.docPrefill}')));
+                },
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: Text('Open ${msg.descriptor!.docType}'),
+              ),
+            ],
+          ],
         ),
       ),
     );
