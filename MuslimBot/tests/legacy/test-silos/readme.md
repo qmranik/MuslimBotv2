@@ -2,9 +2,20 @@
 
 This directory contains standalone `docker-compose` files to test specific components (silos) of the LiteERP system independently. This strategy prevents memory exhaustion on low-RAM machines (e.g. 4GB Mac M1) by spinning up only the services required for a specific testing flow.
 
-## 🚀 How to Use Silo Testing
+**8GB M1 / OrbStack:** use [docs/MVT_8GB_M1.md](../docs/MVT_8GB_M1.md), compose `docker-compose.mvt-a.yml` / `docker-compose.mvt-b.yml`, and skills `mvt-cloud-offload` / `mvt-silo-verify`.
 
-Before running any silo, **ensure your Docker Desktop is configured with a maximum of 2GB RAM and 1.5GB Swap.**
+### MVT A/B (8GB)
+
+| Compose | Runbook | Goal |
+|---------|---------|------|
+| `docker-compose.mvt-a.yml` (+ optional `mvt-a.cloud.override.yml`) | [mvt-a_erp_genui.md](mvt-a_erp_genui.md) | ERP + GenUI + Go `ENV=local` |
+| `docker-compose.mvt-b.yml` (+ optional `mvt-b.cloud.override.yml`) | [mvt-b_chatwoot_n8n.md](mvt-b_chatwoot_n8n.md) | Chatwoot + n8n (ERP mocked) |
+
+Cloud DB setup: [docs/MVT_CLOUD_OFFLOAD.md](../docs/MVT_CLOUD_OFFLOAD.md).
+
+## How to Use Silo Testing
+
+Before running numbered silos 1–5 on Docker Desktop, cap the VM at **2GB RAM and 1.5GB Swap.** On OrbStack + 8GB, prefer the MVT A/B path instead.
 
 **Important**: Make sure you bring down any currently running containers before switching silos:
 ```bash

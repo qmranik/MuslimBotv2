@@ -1,5 +1,7 @@
 # LiteERP (MuslimBot System) - 4GB RAM QA & Testing Plan
 
+> **8GB Mac:** prefer OrbStack + cloud DB offload — see [docs/MVT_8GB_M1.md](docs/MVT_8GB_M1.md) and skills `mvt-cloud-offload` / `mvt-silo-verify`.
+
 Running the full LiteERP stack (Frappe, MariaDB, Redis x3, n8n, KB BFF, Voice Worker, Go Orchestrator, Generative UI, Chatwoot) simultaneously requires approximately 15-17GB of RAM. On a memory-constrained machine like a Mac M1 with 4GB RAM, Docker Desktop overhead combined with these services will cause Out-Of-Memory (OOM) crashes and severe swap thrashing.
 
 To test the unified system locally, you must adopt a **fragmented testing strategy (Silo Testing)**. This involves:

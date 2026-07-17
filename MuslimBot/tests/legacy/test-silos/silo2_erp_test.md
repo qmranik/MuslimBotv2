@@ -26,7 +26,7 @@ docker compose -f docker-compose.silo2.yml exec frappe-web bench --site small.lo
 ## 2. Pre-flight Health Check (Phase 1)
 Run the following curl command to ensure the `/ops` route is active:
 ```bash
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ops
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/login
 ```
 **Pass Criteria:** HTTP Status 200 or 302.
 
