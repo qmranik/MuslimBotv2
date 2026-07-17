@@ -1,49 +1,68 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO_URL="${1:-}"
+REPO_URL="https://github.com/qmranik/MuslimBotv2.git"
+BRANCH="chore/repo-restructure"
 
-if [ -z "$REPO_URL" ]; then
-  echo "Usage: $0 <REPO_URL>"
-  echo "Example: $0 https://github.com/your-org/liteERP.git"
-  exit 1
+echo "==> Setting up directory layout on data disk..."
+sudo mkdir -p /opt/muslimbot/repo
+sudo mkdir -p /opt/muslimbot/backups
+sudo mkdir -p /opt/muslimbot/data/docker
+sudo mkdir -p /opt/muslimbot/secrets
+
+sudo chown -R "$USER:$USER" /opt/muslimbot/repo /opt/muslimbot/backups /opt/muslimbot/data
+sudo chown "$USER:$USER" /opt/muslimbot/secrets
+sudo chmod 0700 /opt/muslimbot/secrets
+
+echo "==> Configuring Docker to use data disk..."
+if ! sudo grep -q '"data-root": "/opt/muslimbot/data/docker"' /etc/docker/daemon.json 2>/dev/null; then
+  sudo systemctl stop docker docker.socket || true
+  sudo mkdir -p /etc/docker
+  sudo tee /etc/docker/daemon.json >/dev/null <<'EOF'
+{
+  "data-root": "/opt/muslimbot/data/docker",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "20m",
+    "max-file": "5"
+  }
+}
+EOF
+  sudo systemctl start docker
+  docker info --format 'Docker root: {{.DockerRootDir}}'
+else
+  echo "Docker data-root is already configured."
 fi
-
-echo "==> Setting up directories on data disk..."
-sudo mkdir -p /opt/muslimbot/app
-sudo chown "$USER:$USER" /opt/muslimbot/app
-
-# Ensure subdirectories for bind mounts exist
-sudo mkdir -p /opt/muslimbot/data/frappe/sites
-sudo mkdir -p /opt/muslimbot/data/frappe/logs
-sudo mkdir -p /opt/muslimbot/data/kb_data
-
-# Frappe uses uid 1000 in its container
-sudo chown -R 1000:1000 /opt/muslimbot/data/frappe || true
-
-cd /opt/muslimbot/app
 
 echo "==> Cloning repository..."
-if [ ! -d "liteERP" ]; then
-  git clone "$REPO_URL" liteERP
+if [ ! -d "/opt/muslimbot/repo/MuslimBot" ]; then
+  git clone --branch "$BRANCH" --single-branch "$REPO_URL" /opt/muslimbot/repo
 else
-  echo "liteERP already exists, pulling latest..."
-  cd liteERP
-  git pull
-  cd ..
+  echo "Repository already cloned, pulling latest..."
+  cd /opt/muslimbot/repo
+  git pull origin "$BRANCH"
 fi
 
-cd liteERP/MuslimBot
+echo "==> Updating submodules..."
+cd /opt/muslimbot/repo
+git submodule update --init --recursive
 
 echo "==> Configuring .env..."
-if [ ! -f ".env" ]; then
-  cp .env.template .env
+cd /opt/muslimbot/repo/MuslimBot
+if [ ! -f "/opt/muslimbot/secrets/muslimbot.env" ]; then
+  cp .env.template /opt/muslimbot/secrets/muslimbot.env
+  chmod 600 /opt/muslimbot/secrets/muslimbot.env
+  ln -sf /opt/muslimbot/secrets/muslimbot.env .env
   
   # Generate strong random secrets
   sed -i "s/^DB_ROOT_PASSWORD=.*/DB_ROOT_PASSWORD=$(openssl rand -hex 24)/" .env
   sed -i "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$(openssl rand -hex 24)/" .env
+  sed -i "s/^POSTGRES_SHARED_PASSWORD=.*/POSTGRES_SHARED_PASSWORD=$(openssl rand -hex 24)/" .env
+  sed -i "s/^N8N_PASSWORD=.*/N8N_PASSWORD=$(openssl rand -hex 24)/" .env
   sed -i "s/^N8N_ENCRYPTION_KEY=.*/N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)/" .env
+  sed -i "s/^CHATWOOT_DB_PASSWORD=.*/CHATWOOT_DB_PASSWORD=$(openssl rand -hex 24)/" .env
   sed -i "s/^CHATWOOT_SECRET_KEY=.*/CHATWOOT_SECRET_KEY=$(openssl rand -hex 64)/" .env
+  sed -i "s/^KB_BFF_API_KEY=.*/KB_BFF_API_KEY=$(openssl rand -hex 32)/" .env
   
   # Determine public IP and set URLs
   PUBLIC_IP=$(curl -s ifconfig.me || curl -s ifconfig.co)
@@ -51,47 +70,49 @@ if [ ! -f ".env" ]; then
     echo "Detected public IP: $PUBLIC_IP"
     sed -i "s|^DEMO_PUBLIC_URL=.*|DEMO_PUBLIC_URL=http://${PUBLIC_IP}|" .env
     sed -i "s|^FRAPPE_SITE_NAME=.*|FRAPPE_SITE_NAME=small.localhost|" .env
-    sed -i "s|^FRAPPE_SITE_HOST=.*|FRAPPE_SITE_HOST=${PUBLIC_IP}:8000|" .env
+    sed -i "s|^FRAPPE_SITE_HOST=.*|FRAPPE_SITE_HOST=small.localhost:8000|" .env
     sed -i "s|^N8N_HOST=.*|N8N_HOST=${PUBLIC_IP}|" .env
+    sed -i "s|^N8N_PROTOCOL=.*|N8N_PROTOCOL=http|" .env
     sed -i "s|^N8N_WEBHOOK_URL=.*|N8N_WEBHOOK_URL=http://${PUBLIC_IP}:5678|" .env
     sed -i "s|^CHATWOOT_FRONTEND_URL=.*|CHATWOOT_FRONTEND_URL=http://${PUBLIC_IP}:3000|" .env
   else
-    echo "Warning: Could not detect public IP. You will need to edit .env manually."
+    echo "Warning: Could not detect public IP. You will need to edit /opt/muslimbot/secrets/muslimbot.env manually."
   fi
 else
-  echo ".env already exists, skipping generation."
+  echo ".env already exists in /opt/muslimbot/secrets/muslimbot.env, skipping generation."
+  ln -sf /opt/muslimbot/secrets/muslimbot.env .env
 fi
 
-echo "==> Applying compose override (bind-mounts)..."
-if [ -f "terraform/single-host/docker-compose.override.yml" ]; then
-  cp terraform/single-host/docker-compose.override.yml docker-compose.override.yml
-  echo "Override applied."
-else
-  echo "Warning: terraform/single-host/docker-compose.override.yml not found in the repo!"
-fi
+echo "==> Validating Compose..."
+docker compose --profile support --profile voice config >/dev/null
+echo "Compose configuration is valid."
 
 echo "==> Building Docker images (this may take a while)..."
-docker build -t small-erp:latest .
-docker build -t muslimbot-voice-agent:latest ./Muslimbot-voice-agent
+docker build -t localhost/small-erp:latest .
+docker compose --profile support --profile voice build
 
-echo "==> Starting application stack..."
-docker compose up -d
-docker compose --profile voice up -d
+echo "==> Starting application stack (core + support + voice)..."
+docker compose --profile support --profile voice up -d
 
 echo "==> Waiting for services to stabilize..."
-sleep 15
+sleep 20
 
-echo "==> Initializing demo data (install-demo.sh)..."
+echo "==> Initializing ERPNext and Chatwoot (install-demo.sh)..."
+export COMPOSE_PROFILES=support,voice
 bash small_erp/scripts/install-demo.sh
 
 echo ""
 echo "=========================================================="
 echo "Deployment successful!"
-echo "To access the demo via public IP, ensure you have opened the firewall ports:"
 echo ""
-echo "gcloud compute firewall-rules create muslimbot-demo-app-ports \\"
-echo "  --network=muslimbot-vpc-prod \\"
-echo "  --allow=tcp:8000,tcp:5173,tcp:5678,tcp:8787,tcp:3000,tcp:4007 \\"
-echo "  --source-ranges=0.0.0.0/0 \\"
-echo "  --target-tags=muslimbot-host"
+echo "For secure local access via SSH tunnels (run this on your laptop):"
+echo "gcloud compute ssh muslimbot-host-prod \\"
+echo "  --zone=asia-south1-a \\"
+echo "  --project=gen-lang-client-0113022969 \\"
+echo "  -- \\"
+echo "  -L 8000:localhost:8000 -L 5173:localhost:5173 \\"
+echo "  -L 5678:localhost:5678 -L 8787:localhost:8787 \\"
+echo "  -L 3000:localhost:3000"
+echo ""
+echo "Or wait until edge stack (Traefik/DNS/TLS) is configured."
 echo "=========================================================="
