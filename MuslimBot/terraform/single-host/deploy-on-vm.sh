@@ -55,32 +55,34 @@ if [ ! -f "/opt/muslimbot/secrets/muslimbot.env" ] || ! grep -q "PUBLIC_DOMAIN" 
   chmod 600 /opt/muslimbot/secrets/muslimbot.env
   ln -sf /opt/muslimbot/secrets/muslimbot.env .env
   
+  ENV_FILE="/opt/muslimbot/secrets/muslimbot.env"
   # Generate strong random secrets
-  sed -i "s/^DB_ROOT_PASSWORD=.*/DB_ROOT_PASSWORD=$(openssl rand -hex 24)/" .env
-  sed -i "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$(openssl rand -hex 24)/" .env
-  sed -i "s/^POSTGRES_SHARED_PASSWORD=.*/POSTGRES_SHARED_PASSWORD=$(openssl rand -hex 24)/" .env
-  sed -i "s/^N8N_PASSWORD=.*/N8N_PASSWORD=$(openssl rand -hex 24)/" .env
-  sed -i "s/^N8N_ENCRYPTION_KEY=.*/N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)/" .env
-  sed -i "s/^CHATWOOT_DB_PASSWORD=.*/CHATWOOT_DB_PASSWORD=$(openssl rand -hex 24)/" .env
-  sed -i "s/^CHATWOOT_SECRET_KEY=.*/CHATWOOT_SECRET_KEY=$(openssl rand -hex 64)/" .env
-  sed -i "s/^KB_BFF_API_KEY=.*/KB_BFF_API_KEY=$(openssl rand -hex 32)/" .env
-  echo "AUTHENTIK_SECRET_KEY=$(openssl rand -hex 64)" >> .env
-  echo "TRYPOST_DB_PASSWORD=$(openssl rand -hex 24)" >> .env
-  echo "TRYPOST_APP_KEY=base64:$(openssl rand -base64 32)" >> .env
+  sed -i "s/^DB_ROOT_PASSWORD=.*/DB_ROOT_PASSWORD=$(openssl rand -hex 24)/" "$ENV_FILE"
+  sed -i "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$(openssl rand -hex 24)/" "$ENV_FILE"
+  sed -i "s/^POSTGRES_SHARED_PASSWORD=.*/POSTGRES_SHARED_PASSWORD=$(openssl rand -hex 24)/" "$ENV_FILE"
+  sed -i "s/^N8N_PASSWORD=.*/N8N_PASSWORD=$(openssl rand -hex 24)/" "$ENV_FILE"
+  sed -i "s/^N8N_ENCRYPTION_KEY=.*/N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)/" "$ENV_FILE"
+  sed -i "s/^CHATWOOT_DB_PASSWORD=.*/CHATWOOT_DB_PASSWORD=$(openssl rand -hex 24)/" "$ENV_FILE"
+  sed -i "s/^CHATWOOT_SECRET_KEY=.*/CHATWOOT_SECRET_KEY=$(openssl rand -hex 64)/" "$ENV_FILE"
+  sed -i "s/^KB_BFF_API_KEY=.*/KB_BFF_API_KEY=$(openssl rand -hex 32)/" "$ENV_FILE"
+  echo "AUTHENTIK_SECRET_KEY=$(openssl rand -hex 64)" >> "$ENV_FILE"
+  echo "TRYPOST_DB_PASSWORD=$(openssl rand -hex 24)" >> "$ENV_FILE"
+  echo "TRYPOST_APP_KEY=base64:$(openssl rand -base64 32)" >> "$ENV_FILE"
   
   # Determine public IP and set URLs
   PUBLIC_IP=$(curl -s ifconfig.me || curl -s ifconfig.co)
   if [ -n "$PUBLIC_IP" ]; then
     echo "Detected public IP: $PUBLIC_IP"
     PUBLIC_DOMAIN="${PUBLIC_IP}.nip.io"
-    echo "PUBLIC_DOMAIN=${PUBLIC_DOMAIN}" >> .env
-    sed -i "s|^DEMO_PUBLIC_URL=.*|DEMO_PUBLIC_URL=https://erp.${PUBLIC_DOMAIN}|" .env
-    sed -i "s|^FRAPPE_SITE_NAME=.*|FRAPPE_SITE_NAME=erp.${PUBLIC_DOMAIN}|" .env
-    sed -i "s|^FRAPPE_SITE_HOST=.*|FRAPPE_SITE_HOST=erp.${PUBLIC_DOMAIN}|" .env
-    sed -i "s|^N8N_HOST=.*|N8N_HOST=n8n.${PUBLIC_DOMAIN}|" .env
-    sed -i "s|^N8N_PROTOCOL=.*|N8N_PROTOCOL=https|" .env
-    sed -i "s|^N8N_WEBHOOK_URL=.*|N8N_WEBHOOK_URL=https://n8n.${PUBLIC_DOMAIN}|" .env
-    sed -i "s|^CHATWOOT_FRONTEND_URL=.*|CHATWOOT_FRONTEND_URL=https://chatwoot.${PUBLIC_DOMAIN}|" .env
+    echo "PUBLIC_DOMAIN=${PUBLIC_DOMAIN}" >> "$ENV_FILE"
+    sed -i "s|^DEMO_PUBLIC_URL=.*|DEMO_PUBLIC_URL=https://erp.${PUBLIC_DOMAIN}|" "$ENV_FILE"
+    sed -i "s|^FRAPPE_SITE_NAME=.*|FRAPPE_SITE_NAME=erp.${PUBLIC_DOMAIN}|" "$ENV_FILE"
+    sed -i "s|^FRAPPE_SITE_HOST=.*|FRAPPE_SITE_HOST=erp.${PUBLIC_DOMAIN}|" "$ENV_FILE"
+    sed -i "s|^N8N_HOST=.*|N8N_HOST=n8n.${PUBLIC_DOMAIN}|" "$ENV_FILE"
+    sed -i "s|^N8N_PROTOCOL=.*|N8N_PROTOCOL=https|" "$ENV_FILE"
+    sed -i "s|^N8N_WEBHOOK_URL=.*|N8N_WEBHOOK_URL=https://n8n.${PUBLIC_DOMAIN}|" "$ENV_FILE"
+    sed -i "s|^CHATWOOT_FRONTEND_URL=.*|CHATWOOT_FRONTEND_URL=https://chatwoot.${PUBLIC_DOMAIN}|" "$ENV_FILE"
+    sed -i "s|^POSTIZ_PUBLIC_URL=.*|POSTIZ_PUBLIC_URL=https://social.${PUBLIC_DOMAIN}|" "$ENV_FILE"
   else
     echo "Warning: Could not detect public IP. You will need to edit /opt/muslimbot/secrets/muslimbot.env manually."
   fi
