@@ -29,11 +29,6 @@ COPY small_erp/small_erp_app/setup.py /home/frappe/frappe-bench/apps/small_erp/s
 COPY small_erp/small_erp_app/small_erp /home/frappe/frappe-bench/apps/small_erp/small_erp
 
 # Copy utility scripts into the inner module (bench execute needs them here)
-COPY small_erp/finish_setup.py /home/frappe/frappe-bench/apps/small_erp/small_erp/finish_setup.py
-COPY small_erp/seed_demo.py /home/frappe/frappe-bench/apps/small_erp/small_erp/seed_demo.py
-COPY small_erp/seed_pharma.py /home/frappe/frappe-bench/apps/small_erp/small_erp/seed_pharma.py
-COPY small_erp/seed_orgs.py /home/frappe/frappe-bench/apps/small_erp/small_erp/seed_orgs.py
-COPY small_erp/small_erp_app/small_erp/setup_permissions.py /home/frappe/frappe-bench/apps/small_erp/small_erp/setup_permissions.py
 
 # Ensure __init__.py exists at both levels
 RUN touch /home/frappe/frappe-bench/apps/small_erp/__init__.py
