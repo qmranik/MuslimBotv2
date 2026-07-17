@@ -1,20 +1,32 @@
 ##############################################################################
-# Small ERP — Demo Stack (GCP VM / investor demo)
+# Small ERP — GCP Budget Stack (e2-standard-4: 4 vCPU / 16 GB RAM)
 #
-# Full demo: small_erp + generative-ui + n8n + Chatwoot + Postiz + Muslimbot
-# Shared Postgres (chatwoot + postiz + temporal) and shared Redis (chatwoot + postiz)
-# Target VM: GCP e2-standard-8 (8 vCPU / 32 GB RAM)
+# Optimized for $300 GCP credits — runs the core MuslimBot experience:
+#   ✅ ERPNext + Small ERP (/ops)
+#   ✅ Generative UI (React chat-to-dashboard)
+#   ✅ n8n (AI workflows, webhooks)
+#   ✅ Muslimbot KB BFF (Knowledge Hub RAG)
+#   ✅ Muslimbot Voice Worker (optional, --profile voice)
+#   ✅ Chatwoot (optional, --profile support)
+#
+# Excluded (saves ~6 GB RAM):
+#   ❌ Postiz (social scheduling — not core to demo)
+#   ❌ Temporal + Elasticsearch (Postiz dependency)
+#   ❌ Authentik / Traefik / Go Orchestrator (platform edge)
+#
+# Memory budget:
+#   Core (always on):   ~7.5 GB
+#   Chatwoot (optional): +3 GB
+#   Voice (optional):    +0.5 GB
+#   OS + Docker:         ~2 GB
+#   Headroom:            ~3–6 GB
 #
 # Usage:
 #   cp .env.template .env && docker build -t small-erp:latest .
-#   docker compose up -d
+#   docker compose -f docker-compose.gcp.yml up -d
 #   bash small_erp/scripts/install-demo.sh
-#   docker compose --profile voice up -d    # optional Muslimbot (requires LiveKit keys)
-#
-# Fresh install after old per-app Postgres volumes:
-#   docker compose down -v   # wipes DB volumes — use only on new demo VM
-#
-# SaaS multi-tenant (Traefik + Open WebUI): use docker-compose.saas.yml instead
+#   docker compose -f docker-compose.gcp.yml --profile voice up -d    # optional
+#   docker compose -f docker-compose.gcp.yml --profile support up -d  # optional
 ##############################################################################
 
 x-frappe-common: &frappe-common
@@ -58,49 +70,23 @@ x-chatwoot-common: &chatwoot-common
   networks:
     - smb-net
 
-x-postiz-common: &postiz-common
-  image: ghcr.io/gitroomhq/postiz-app:latest
-  restart: unless-stopped
-  env_file: .env
-  environment: &postiz-env
-    MAIN_URL: ${POSTIZ_PUBLIC_URL:-http://localhost:4007}
-    FRONTEND_URL: ${POSTIZ_PUBLIC_URL:-http://localhost:4007}
-    NEXT_PUBLIC_BACKEND_URL: ${POSTIZ_PUBLIC_URL:-http://localhost:4007}/api
-    JWT_SECRET: ${POSTIZ_JWT_SECRET}
-    DATABASE_URL: postgresql://postiz_user:${POSTIZ_DB_PASSWORD}@postgres-shared:5432/postiz
-    REDIS_URL: redis://shared-redis:6379/1
-    BACKEND_INTERNAL_URL: http://localhost:3000
-    TEMPORAL_ADDRESS: temporal:7233
-    IS_GENERAL: "true"
-    DISABLE_REGISTRATION: "true"
-    RUN_CRON: "true"
-    STORAGE_PROVIDER: local
-    UPLOAD_DIRECTORY: /uploads
-    NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
-    API_LIMIT: 30
-    NX_ADD_PLUGINS: "false"
-  volumes:
-    - postiz-config:/config/
-    - postiz-uploads:/uploads/
-  networks:
-    - smb-net
-
 services:
   # ─── MariaDB (Frappe / ERPNext) ───────────────────────────────────────
+  # Reduced buffer pool for 16 GB VM
   mariadb:
     image: mariadb:10.11
-    container_name: demo-mariadb
+    container_name: gcp-mariadb
     restart: unless-stopped
     command:
       - "--character-set-server=utf8mb4"
       - "--collation-server=utf8mb4_unicode_ci"
       - "--skip-character-set-client-handshake"
       - "--skip-innodb-read-only-compressed"
-      - "--innodb-buffer-pool-size=${DB_BUFFER_POOL:-1536M}"
-      - "--innodb-log-file-size=128M"
+      - "--innodb-buffer-pool-size=768M"
+      - "--innodb-log-file-size=64M"
       - "--innodb-flush-log-at-trx-commit=2"
       - "--innodb-flush-method=O_DIRECT"
-      - "--max-connections=250"
+      - "--max-connections=150"
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes:
@@ -115,20 +101,18 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2048M
+          memory: 1024M
 
-  # ─── Shared Postgres (Chatwoot + Postiz + Temporal) ───────────────────
+  # ─── Shared Postgres (Chatwoot only — no Postiz/Temporal) ─────────────
   postgres-shared:
     image: pgvector/pgvector:pg16
-    container_name: demo-postgres-shared
+    container_name: gcp-postgres-shared
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_SHARED_PASSWORD}
       POSTGRES_DB: postgres
       CHATWOOT_DB_PASSWORD: ${CHATWOOT_DB_PASSWORD}
-      POSTIZ_DB_PASSWORD: ${POSTIZ_DB_PASSWORD}
-      TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:-temporal}
     volumes:
       - postgres-shared-data:/var/lib/postgresql/data
       - ./configs/postgres/init-multidb.sh:/docker-entrypoint-initdb.d/10-init-multidb.sh:ro
@@ -140,17 +124,19 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    profiles:
+      - support
     deploy:
       resources:
         limits:
-          memory: 1536M
+          memory: 768M
 
-  # ─── Shared Redis (Chatwoot DB 0, Postiz DB 1) ────────────────────────
+  # ─── Shared Redis (Chatwoot) ──────────────────────────────────────────
   shared-redis:
     image: redis:7-alpine
-    container_name: demo-shared-redis
+    container_name: gcp-shared-redis
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     networks:
       - smb-net
     healthcheck:
@@ -158,19 +144,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - support
     deploy:
       resources:
         limits:
-          memory: 320M
+          memory: 192M
 
-  # ─── Redis Trio (Frappe) ───────────────────────────────────────────────
+  # ─── Redis Trio (Frappe) ──────────────────────────────────────────────
   redis-cache:
     image: redis:7-alpine
-    container_name: demo-redis-cache
+    container_name: gcp-redis-cache
     restart: unless-stopped
     command: >
       redis-server
-      --maxmemory 256mb
+      --maxmemory 128mb
       --maxmemory-policy allkeys-lru
       --save ""
       --appendonly no
@@ -179,16 +167,15 @@ services:
     deploy:
       resources:
         limits:
-          memory: 320M
+          memory: 192M
 
-  # ─── Redis Queue ───────────────────────────────────────────────────
   redis-queue:
     image: redis:7-alpine
-    container_name: demo-redis-queue
+    container_name: gcp-redis-queue
     restart: unless-stopped
     command: >
       redis-server
-      --maxmemory 128mb
+      --maxmemory 64mb
       --save 60 1000
       --appendonly yes
     volumes:
@@ -198,16 +185,15 @@ services:
     deploy:
       resources:
         limits:
-          memory: 192M
+          memory: 128M
 
-  # ─── Redis Socket.io ────────────────────────────────────────────────
   redis-socketio:
     image: redis:7-alpine
-    container_name: demo-redis-socketio
+    container_name: gcp-redis-socketio
     restart: unless-stopped
     command: >
       redis-server
-      --maxmemory 64mb
+      --maxmemory 32mb
       --save ""
       --appendonly no
     networks:
@@ -215,17 +201,17 @@ services:
     deploy:
       resources:
         limits:
-          memory: 96M
+          memory: 64M
 
-  # ─── Frappe Web + Workers ─────────────────────────────────────────────
+  # ─── Frappe Web (reduced workers for 4 vCPU) ─────────────────────────
   frappe-web:
     <<: *frappe-common
-    container_name: demo-frappe-web
+    container_name: gcp-frappe-web
     command: >
       /home/frappe/frappe-bench/env/bin/gunicorn
       --chdir=/home/frappe/frappe-bench/sites
       --bind=0.0.0.0:8000
-      --workers=4
+      --workers=2
       --threads=2
       --worker-class=gthread
       --worker-tmp-dir=/dev/shm
@@ -247,36 +233,13 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1536M
+          memory: 1024M
 
+  # Single combined worker (handles default + short queues)
   frappe-worker-default:
     <<: *frappe-common
-    container_name: demo-frappe-worker-default
-    command: bench worker --queue default
-    depends_on:
-      frappe-web:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  frappe-worker-short:
-    <<: *frappe-common
-    container_name: demo-frappe-worker-short
-    command: bench worker --queue short
-    depends_on:
-      frappe-web:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  frappe-worker-long:
-    <<: *frappe-common
-    container_name: demo-frappe-worker-long
-    command: bench worker --queue long
+    container_name: gcp-frappe-worker-default
+    command: bench worker --queue default,short,long
     depends_on:
       frappe-web:
         condition: service_started
@@ -287,7 +250,7 @@ services:
 
   frappe-scheduler:
     <<: *frappe-common
-    container_name: demo-frappe-scheduler
+    container_name: gcp-frappe-scheduler
     command: bench schedule
     depends_on:
       frappe-web:
@@ -299,7 +262,7 @@ services:
 
   frappe-socketio:
     <<: *frappe-common
-    container_name: demo-frappe-socketio
+    container_name: gcp-frappe-socketio
     command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
     depends_on:
       frappe-web:
@@ -307,12 +270,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 192M
 
-  # ─── n8n — AI & Automation ─────────────────────────────────────────────
+  # ─── n8n — AI & Automation ────────────────────────────────────────────
   n8n:
     image: n8nio/n8n:1.64.3
-    container_name: demo-n8n
+    container_name: gcp-n8n
     restart: unless-stopped
     ports:
       - "${N8N_PORT:-5678}:5678"
@@ -327,12 +290,11 @@ services:
       - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678}
       - DB_TYPE=sqlite
       - EXECUTIONS_DATA_PRUNE=true
-      - EXECUTIONS_DATA_MAX_AGE=168
+      - EXECUTIONS_DATA_MAX_AGE=72
       - GENERIC_TIMEZONE=${TZ:-UTC}
       - FRAPPE_URL=http://frappe-web:8000
       - FRAPPE_API_KEY=${FRAPPE_API_KEY}
       - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
-      - POSTIZ_URL=http://postiz:5000
     volumes:
       - n8n-data:/home/node/.n8n
     networks:
@@ -343,9 +305,48 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 512M
 
-  # ─── Generative UI (React SPA + nginx API proxy) ───────────────────────
+  # ─── Muslimbot KB BFF (Knowledge Hub API) ─────────────────────────────
+  muslimbot-kb-bff:
+    build:
+      context: ./Muslimbot-voice-agent
+      dockerfile: Dockerfile
+    image: muslimbot-voice-agent:latest
+    container_name: gcp-muslimbot-kb-bff
+    restart: unless-stopped
+    command: ["uvicorn", "kb_bff.main:app", "--host", "0.0.0.0", "--port", "8787"]
+    ports:
+      - "${KB_BFF_PORT:-8787}:8787"
+    env_file: .env
+    environment:
+      - ERPNEXT_URL=http://frappe-web:8000
+      - REDIS_URL=redis://redis-cache:6379/2
+      - KB_DATA_DIR=/app/data
+      - TENANT_ID=${TENANT_ID:-default}
+      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
+      - LIVEKIT_URL=${LIVEKIT_URL:-}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # Vertex AI RAG (optional — leave empty for SQLite fallback)
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      - GCS_KB_BUCKET=${GCS_KB_BUCKET:-}
+      - VERTEX_LOCATION=${VERTEX_LOCATION:-us-central1}
+    volumes:
+      - muslimbot-kb-data:/app/data
+    depends_on:
+      redis-cache:
+        condition: service_started
+    networks:
+      - smb-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ─── Generative UI (React SPA + nginx API proxy) ─────────────────────
   generative-ui:
     build:
       context: ./generative-ui
@@ -354,7 +355,7 @@ services:
         VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-}
         VITE_LIVEKIT_URL: ${LIVEKIT_URL:-}
     image: ${REGISTRY:-localhost}/generative-ui:${IMAGE_TAG:-latest}
-    container_name: demo-generative-ui
+    container_name: gcp-generative-ui
     restart: unless-stopped
     ports:
       - "${GENERATIVE_UI_PORT:-5173}:80"
@@ -362,8 +363,11 @@ services:
       - FRAPPE_SITE_HOST=${FRAPPE_SITE_HOST:-${FRAPPE_SITE_NAME:-small.localhost}:8000}
       - FRAPPE_API_KEY=${FRAPPE_API_KEY}
       - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
+      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
     depends_on:
       frappe-web:
+        condition: service_started
+      muslimbot-kb-bff:
         condition: service_started
     networks:
       - smb-net
@@ -372,10 +376,10 @@ services:
         limits:
           memory: 128M
 
-  # ─── Chatwoot — Omnichannel Support ────────────────────────────────────
+  # ─── Chatwoot (optional — profile: support) ──────────────────────────
   chatwoot-rails:
     <<: *chatwoot-common
-    container_name: demo-chatwoot
+    container_name: gcp-chatwoot
     entrypoint: docker/entrypoints/rails.sh
     command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
     ports:
@@ -385,14 +389,16 @@ services:
         condition: service_healthy
       shared-redis:
         condition: service_healthy
+    profiles:
+      - support
     deploy:
       resources:
         limits:
-          memory: 2048M
+          memory: 1536M
 
   chatwoot-worker:
     <<: *chatwoot-common
-    container_name: demo-chatwoot-worker
+    container_name: gcp-chatwoot-worker
     command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
     depends_on:
       postgres-shared:
@@ -401,128 +407,20 @@ services:
         condition: service_healthy
       chatwoot-rails:
         condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
-
-  # ─── Temporal (Postiz job scheduler) ───────────────────────────────────
-  temporal-elasticsearch:
-    image: elasticsearch:7.17.27
-    container_name: demo-temporal-elasticsearch
-    restart: unless-stopped
-    environment:
-      - cluster.routing.allocation.disk.threshold_enabled=true
-      - cluster.routing.allocation.disk.watermark.low=512mb
-      - cluster.routing.allocation.disk.watermark.high=256mb
-      - cluster.routing.allocation.disk.watermark.flood_stage=128mb
-      - discovery.type=single-node
-      - ES_JAVA_OPTS=-Xms256m -Xmx256m
-      - xpack.security.enabled=false
-    networks:
-      - smb-net
-    expose:
-      - "9200"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS \"http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s\" || exit 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-    volumes:
-      - temporal-elasticsearch-data:/usr/share/elasticsearch/data
+    profiles:
+      - support
     deploy:
       resources:
         limits:
           memory: 768M
 
-  temporal:
-    image: temporalio/auto-setup:1.28.1
-    container_name: demo-temporal
-    restart: unless-stopped
-    expose:
-      - "7233"
-    environment:
-      - DB=postgres12
-      - DB_PORT=5432
-      - POSTGRES_USER=temporal
-      - POSTGRES_PWD=${TEMPORAL_DB_PASSWORD:-temporal}
-      - POSTGRES_SEEDS=postgres-shared
-      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development-sql.yaml
-      - ENABLE_ES=true
-      - ES_SEEDS=temporal-elasticsearch
-      - ES_VERSION=v7
-      - TEMPORAL_NAMESPACE=default
-    depends_on:
-      postgres-shared:
-        condition: service_healthy
-      temporal-elasticsearch:
-        condition: service_healthy
-    volumes:
-      - ./configs/postiz/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
-    networks:
-      - smb-net
-    healthcheck:
-      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  temporal-ui:
-    image: temporalio/ui:2.34.0
-    container_name: demo-temporal-ui
-    restart: unless-stopped
-    ports:
-      - "${TEMPORAL_UI_PORT:-8088}:8080"
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CORS_ORIGINS=http://127.0.0.1:3000
-    depends_on:
-      temporal:
-        condition: service_healthy
-    networks:
-      - smb-net
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
-  # ─── Postiz — Social scheduling ────────────────────────────────────────
-  postiz:
-    <<: *postiz-common
-    container_name: demo-postiz
-    ports:
-      - "${POSTIZ_PORT:-4007}:5000"
-    healthcheck:
-      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:5000/',res=>process.exit(res.statusCode<500?0:1));r.on('error',()=>process.exit(1));r.setTimeout(4000,()=>{r.destroy();process.exit(1)})"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
-    depends_on:
-      postgres-shared:
-        condition: service_healthy
-      shared-redis:
-        condition: service_healthy
-      temporal:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
-
-  # ─── Muslimbot voice worker (optional — profile: voice) ───────────────
+  # ─── Muslimbot Voice Worker (optional — profile: voice) ──────────────
   muslimbot-voice-worker:
     build:
       context: ./Muslimbot-voice-agent
       dockerfile: Dockerfile
     image: muslimbot-voice-agent:latest
-    container_name: demo-muslimbot
+    container_name: gcp-muslimbot-voice
     restart: unless-stopped
     command: ["python", "agent.py", "start"]
     env_file: .env
@@ -531,9 +429,11 @@ services:
       - N8N_URL=http://n8n:5678
       - REDIS_URL=redis://redis-cache:6379/2
       - TENANT_ID=${TENANT_ID:-default}
-      - LIVEKIT_URL=${LIVEKIT_URL:-}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      # Defaults to the self-hosted livekit service below; override in .env to
+      # point at LiveKit Cloud instead.
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}
       - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
     networks:
       - smb-net
@@ -542,12 +442,87 @@ services:
         condition: service_started
       n8n:
         condition: service_started
+      livekit:
+        condition: service_started
     profiles:
       - voice
     deploy:
       resources:
         limits:
           memory: 512M
+
+  # ─── Self-hosted LiveKit server (WS-1 — profile: voice) ───────────────
+  # use_external_ip is enabled in the GCP config; the RTP UDP range must be
+  # open in the VPC firewall (WS-8) for media to reach remote callers.
+  livekit:
+    image: livekit/livekit-server:v1.8
+    container_name: gcp-livekit
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit/livekit.yaml"]
+    environment:
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}"
+    volumes:
+      - ./configs/livekit/livekit.gcp.yaml:/etc/livekit/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    networks:
+      - smb-net
+    depends_on:
+      livekit-redis:
+        condition: service_started
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ─── LiveKit Redis (shared by server + egress — WS-9, profile: voice) ─
+  livekit-redis:
+    image: redis:7-alpine
+    container_name: gcp-livekit-redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    networks:
+      - smb-net
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # ─── LiveKit Egress — call recording (WS-9, profile: voice) ───────────
+  # RoomComposite audio-only → OGG. Uses headless Chrome (SYS_ADMIN). Storage
+  # creds are passed per-request by the agent (GCS in prod), none configured here.
+  egress:
+    image: livekit/egress:latest
+    container_name: gcp-livekit-egress
+    restart: unless-stopped
+    environment:
+      EGRESS_CONFIG_BODY: |
+        redis:
+          address: livekit-redis:6379
+        api_key: ${LIVEKIT_API_KEY:-devkey}
+        api_secret: ${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}
+        ws_url: ws://livekit:7880
+    cap_add:
+      - SYS_ADMIN
+    depends_on:
+      livekit:
+        condition: service_started
+      livekit-redis:
+        condition: service_started
+    networks:
+      - smb-net
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
 
 volumes:
   mariadb-data:
@@ -557,9 +532,7 @@ volumes:
   redis-queue-data:
   n8n-data:
   chatwoot-storage:
-  postiz-config:
-  postiz-uploads:
-  temporal-elasticsearch-data:
+  muslimbot-kb-data:
 
 networks:
   smb-net:

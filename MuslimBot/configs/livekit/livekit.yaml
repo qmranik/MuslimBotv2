@@ -1,0 +1,19 @@
+# LiveKit server — local / self-hosted dev config (WS-1).
+# API key/secret are injected at runtime via the LIVEKIT_KEYS env var in
+# docker-compose (sourced from LIVEKIT_API_KEY / LIVEKIT_API_SECRET) — never
+# stored in this file, so it is safe to commit.
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  # Local Docker bridge: advertise the container/host IP, not a public one.
+  use_external_ip: false
+turn:
+  enabled: false
+# Redis is required for LiveKit Egress (call recording, WS-9) to communicate
+# with the server. Single-node routing still applies.
+redis:
+  address: livekit-redis:6379
+logging:
+  level: info

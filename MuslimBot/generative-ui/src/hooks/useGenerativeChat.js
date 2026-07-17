@@ -1,16 +1,21 @@
+"use client";
 import { useState, useCallback } from 'react';
 import { runNLPRouter, invalidateERPCache } from '../services/gemini';
-import {
-  checkERPConnection,
-  fetchERPContext,
-  createStockEntry,
-  createItem,
-  createCustomer,
-  createSalesInvoice,
-  recordPayment,
-  posCheckout,
-  updateCustomer,
-} from '../services/erpClient';
+import { checkERPConnection, fetchERPContext } from '../services/erpClient';
+import { executeServerTool } from '../services/serverBrain';
+
+const ACTION_TO_TOOL = {
+  create_stock_entry: 'add_stock',
+  add_stock: 'add_stock',
+  create_item: 'create_item',
+  create_customer: 'create_customer',
+  create_invoice: 'create_order',
+  create_order: 'create_order',
+  record_payment: 'record_payment',
+  pos_checkout: 'create_order',
+  trigger_workflow: 'trigger_workflow',
+  send_notification: 'send_notification',
+};
 
 export function useGenerativeChat() {
   const [messages, setMessages] = useState([]);
@@ -89,7 +94,7 @@ export function useGenerativeChat() {
           id: Date.now() + 1,
           sender: 'ai',
           component: 'text',
-          explanation: 'Router connection error. Check network or API key.',
+          explanation: 'Router connection error. Check orchestrator /v1/ai/generate-ui.',
         },
       ]);
     } finally {
@@ -98,50 +103,22 @@ export function useGenerativeChat() {
   }, [input, messages]);
 
   const handleExecuteAction = useCallback(async (msgId, actionType, actionParams) => {
-    if (!erpConnected && dataSource === 'live') {
-      setActionStates((prev) => ({
-        ...prev,
-        [msgId]: { status: 'error', error: 'ERP offline — writes blocked.' },
-      }));
-      return;
-    }
-
     setActionStates((prev) => ({ ...prev, [msgId]: { status: 'submitting', error: null } }));
 
     try {
-      let res;
-      if (!erpConnected || dataSource === 'mock') {
-        await new Promise((r) => setTimeout(r, 800));
-        res = { name: `MOCK-${actionType}-${Math.floor(Math.random() * 10000)}` };
-      } else {
-        switch (actionType) {
-          case 'create_stock_entry':
-            res = await createStockEntry(actionParams);
-            break;
-          case 'create_item':
-            res = await createItem(actionParams);
-            break;
-          case 'create_customer':
-            res = await createCustomer(actionParams);
-            break;
-          case 'create_invoice':
-            res = await createSalesInvoice(actionParams);
-            break;
-          case 'record_payment':
-            res = await recordPayment(actionParams);
-            break;
-          case 'pos_checkout':
-            res = await posCheckout(actionParams);
-            break;
-          case 'update_customer':
-            res = await updateCustomer(actionParams);
-            break;
-          default:
-            throw new Error(`Unknown action: ${actionType}`);
-        }
+      const tool = ACTION_TO_TOOL[actionType] || actionType;
+      const result = await executeServerTool(tool, actionParams || {}, true);
+      if (!result?.ok) {
+        throw new Error(result?.error || 'Tool execution failed');
       }
 
-      setActionStates((prev) => ({ ...prev, [msgId]: { status: 'success', result: res } }));
+      const name =
+        result?.data?.name ||
+        result?.data?.payment ||
+        result?.data?.status ||
+        tool;
+
+      setActionStates((prev) => ({ ...prev, [msgId]: { status: 'success', result: result.data } }));
       invalidateERPCache();
       window.dispatchEvent(new CustomEvent('erp:cache:invalidate'));
       setMessages((prev) => [
@@ -150,7 +127,7 @@ export function useGenerativeChat() {
           id: Date.now(),
           sender: 'ai',
           component: 'text',
-          explanation: `Success: \`${res?.name || res?.payment || 'OK'}\` submitted to ERP.`,
+          explanation: `Success: \`${typeof name === 'string' ? name : 'OK'}\` via /v1/ai/tool/execute.`,
         },
       ]);
     } catch (err) {
@@ -159,7 +136,7 @@ export function useGenerativeChat() {
         [msgId]: { status: 'error', error: err.message || 'Request failed' },
       }));
     }
-  }, [erpConnected, dataSource]);
+  }, []);
 
   const handleCancelAction = useCallback((msgId) => {
     setActionStates((prev) => ({ ...prev, [msgId]: { status: 'cancelled' } }));

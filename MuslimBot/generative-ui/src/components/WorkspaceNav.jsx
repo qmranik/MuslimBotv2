@@ -3,22 +3,30 @@ import {
   LayoutDashboard,
   BookOpen,
   Package,
+  ShoppingCart,
+  Users,
+  CreditCard,
   Workflow,
   Headphones,
   Share2,
+  FolderOpen,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../stores/useWorkspaceStore';
 
 const NATIVE_VIEWS = [
   { id: 'command-center', label: 'Command Center', icon: LayoutDashboard },
+  { id: 'erp-orders', label: 'Orders & Invoices', icon: ShoppingCart },
+  { id: 'erp-customers', label: 'Customers', icon: Users },
+  { id: 'erp-inventory', label: 'Inventory', icon: Package },
+  { id: 'erp-pos', label: 'Point of Sale', icon: CreditCard },
   { id: 'knowledge-hub', label: 'Knowledge Hub', icon: BookOpen },
 ];
 
 const EXTERNAL_VIEWS = [
-  { id: 'erp-ops', label: 'liteERP /ops', icon: Package },
   { id: 'automations', label: 'n8n Automations', icon: Workflow },
   { id: 'support', label: 'Support Chatwoot', icon: Headphones },
   { id: 'marketing', label: 'Postiz Marketing', icon: Share2 },
+  { id: 'files', label: 'Nextcloud Files', icon: FolderOpen },
 ];
 
 function NavButton({ view, active, onClick, compact }) {
@@ -39,20 +47,21 @@ function NavButton({ view, active, onClick, compact }) {
   );
 }
 
-export function WorkspaceNav({ layout = 'sidebar', compact = false }) {
+export function WorkspaceNav({ layout = 'sidebar', compact = false, onSelect }) {
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
+  const select = onSelect || setActiveWorkspace;
 
   if (layout === 'bottom') {
     const all = [...NATIVE_VIEWS, ...EXTERNAL_VIEWS];
     return (
-      <nav className="flex items-center justify-around gap-1 w-full" aria-label="Workspace navigation">
+      <nav className="flex items-center justify-around gap-1 w-full overflow-x-auto" aria-label="Workspace navigation">
         {all.map((view) => (
           <button
             key={view.id}
             type="button"
-            onClick={() => setActiveWorkspace(view.id)}
-            className={`flex flex-col items-center gap-0.5 flex-1 py-2 rounded-lg text-[9px] font-semibold ${
+            onClick={() => select(view.id)}
+            className={`flex flex-col items-center gap-0.5 flex-1 py-2 rounded-lg text-[9px] font-semibold min-w-[56px] ${
               activeWorkspace === view.id ? 'text-indigo-600' : 'text-slate-500'
             }`}
           >
@@ -74,7 +83,7 @@ export function WorkspaceNav({ layout = 'sidebar', compact = false }) {
               key={view.id}
               view={view}
               active={activeWorkspace === view.id}
-              onClick={setActiveWorkspace}
+              onClick={select}
               compact={compact}
             />
           ))}
@@ -88,7 +97,7 @@ export function WorkspaceNav({ layout = 'sidebar', compact = false }) {
               key={view.id}
               view={view}
               active={activeWorkspace === view.id}
-              onClick={setActiveWorkspace}
+              onClick={select}
               compact={compact}
             />
           ))}

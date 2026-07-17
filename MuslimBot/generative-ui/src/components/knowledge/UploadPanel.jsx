@@ -1,3 +1,4 @@
+"use client";
 import React, { useRef, useState } from 'react';
 import { Upload, Loader2 } from 'lucide-react';
 import { uploadDocument } from '../../services/kbClient';

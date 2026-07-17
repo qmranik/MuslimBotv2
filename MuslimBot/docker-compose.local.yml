@@ -370,9 +370,11 @@ services:
       - N8N_URL=http://n8n:5678
       - REDIS_URL=redis://redis-cache:6379/2
       - TENANT_ID=${TENANT_ID:-default}
-      - LIVEKIT_URL=${LIVEKIT_URL:-}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
+      # Defaults to the self-hosted livekit service below; override in .env to
+      # point at LiveKit Cloud instead.
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}
       - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
     networks:
       - smb-net-local
@@ -381,12 +383,90 @@ services:
         condition: service_started
       n8n:
         condition: service_started
+      livekit:
+        condition: service_started
     profiles:
       - voice
     deploy:
       resources:
         limits:
           memory: 512M
+
+  # ─── Self-hosted LiveKit server (WS-1 — profile: voice) ───────────────
+  # Replaces the LiveKit Cloud dependency. The voice worker (agent.py) is
+  # unchanged — it just points LIVEKIT_URL at this container instead.
+  livekit:
+    image: livekit/livekit-server:v1.8
+    container_name: local-livekit
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit/livekit.yaml"]
+    environment:
+      # key: secret pair, sourced from the same vars the worker uses so both
+      # sides share credentials. Defaults match livekit --dev for local use.
+      - "LIVEKIT_KEYS=${LIVEKIT_API_KEY:-devkey}: ${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}"
+    volumes:
+      - ./configs/livekit/livekit.yaml:/etc/livekit/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    networks:
+      - smb-net-local
+    depends_on:
+      livekit-redis:
+        condition: service_started
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ─── LiveKit Redis (shared by server + egress — WS-9, profile: voice) ─
+  livekit-redis:
+    image: redis:7-alpine
+    container_name: local-livekit-redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    networks:
+      - smb-net-local
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+
+  # ─── LiveKit Egress — call recording (WS-9, profile: voice) ───────────
+  # Records room audio when the worker starts egress (opt-in EGRESS_ENABLED).
+  # RoomComposite uses headless Chrome → SYS_ADMIN. Storage creds are passed
+  # per-request by the agent, so none are configured here.
+  egress:
+    image: livekit/egress:latest
+    container_name: local-livekit-egress
+    restart: unless-stopped
+    environment:
+      EGRESS_CONFIG_BODY: |
+        redis:
+          address: livekit-redis:6379
+        api_key: ${LIVEKIT_API_KEY:-devkey}
+        api_secret: ${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}
+        ws_url: ws://livekit:7880
+    cap_add:
+      - SYS_ADMIN
+    depends_on:
+      livekit:
+        condition: service_started
+      livekit-redis:
+        condition: service_started
+    networks:
+      - smb-net-local
+    profiles:
+      - voice
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
 
 volumes:
   mariadb-data-local:

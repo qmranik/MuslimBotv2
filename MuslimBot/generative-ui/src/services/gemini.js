@@ -606,19 +606,25 @@ const runMockRouter = (query, db = null) => {
  * otherwise routes immediately to our high-fidelity Mock Router.
  */
 export const runNLPRouter = async (query, history = []) => {
-  // Prefer the server-side MuslimBot brain (keys stay server-side). Disable
-  // with VITE_USE_SERVER_BRAIN=false for offline/local-only dev.
   if ((process.env.NEXT_PUBLIC_USE_SERVER_BRAIN || process.env.VITE_USE_SERVER_BRAIN) !== 'false') {
     const server = await runServerRouter(query, history);
     if (server) return server;
   }
 
-  const apiKey = getApiKey();
+  const allowClientGemini =
+    (process.env.NEXT_PUBLIC_ALLOW_CLIENT_GEMINI || process.env.VITE_ALLOW_CLIENT_GEMINI || '').toLowerCase() === 'true';
 
-  // Always fetch ERP data first (cached if fresh)
   const { data: erpData, source: dataSource } = await getERPData();
 
-  // If no API key is provided, run our mock router with live data
+  if (!allowClientGemini) {
+    const result = runMockRouter(query, erpData);
+    result._dataSource = dataSource;
+    result._meta = { generatedAt: new Date().toISOString(), dataSource, mode: 'mock_fallback' };
+    return result;
+  }
+
+  const apiKey = getApiKey();
+
   if (!apiKey) {
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -632,7 +638,6 @@ export const runNLPRouter = async (query, history = []) => {
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    // Use gemini-2.5-flash for incredibly fast and accurate structure
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
@@ -647,11 +652,6 @@ export const runNLPRouter = async (query, history = []) => {
     const defaultWh = erpData.defaultWarehouse || 'use defaultWarehouse from database JSON';
 
     const systemInstruction = `
-You are the NLP Router, Data Processor, and Generative UI coordinator for a Small ERP SaaS Dashboard.
-DATA SOURCE: ${dataLabel}
-Your job is to analyze the user's natural language request (and chat history) and determine which interactive React UI component should be rendered, along with the precise processed data needed to render it.
-
-You have DIRECT access to the complete database below:
 --- DATABASE JSON START ---
 ${dbContext}
 --- DATABASE JSON END ---

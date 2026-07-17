@@ -18,6 +18,7 @@ import (
 	"muslimbot-orchestrator/internal/tenants"
 	"muslimbot-orchestrator/internal/webhooks"
 	"muslimbot-orchestrator/internal/workflows"
+	"muslimbot-orchestrator/internal/voice"
 )
 
 func probe(url string) string {
@@ -87,6 +88,7 @@ func main() {
 	tenantsHandler := tenants.NewHandler(cfg)
 	webhooksHandler := webhooks.NewHandler(cfg)
 	workflowsHandler := workflows.NewHandler(cfg)
+	voiceHandler := voice.NewHandler(cfg)
 
 	events.NewDispatcher(cfg).Start()
 
@@ -99,6 +101,7 @@ func main() {
 		api.Use(auth.AuthentikMiddleware(cfg))
 		{
 			api.GET("/auth/me", auth.MeHandler)
+			api.GET("/voice/token", voiceHandler.GetToken)
 
 			api.Any("/erp/*path", proxy.ErpProxyHandler())
 

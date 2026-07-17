@@ -4,11 +4,12 @@ export async function fetchPortalUrl(app) {
       headers: { Accept: 'application/json' },
     });
     if (!response.ok) {
-      throw new Error(`Portal URL fetch failed [${response.status}]`);
+      const body = await response.json().catch(() => ({}));
+      return { error: body.error || `Portal URL fetch failed [${response.status}]` };
     }
     return await response.json();
   } catch (error) {
     console.error('Failed to fetch portal URL:', error);
-    return null;
+    return { error: error.message || 'Portal URL fetch failed' };
   }
 }

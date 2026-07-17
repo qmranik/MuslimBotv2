@@ -1,0 +1,18 @@
+# LiveKit server — GCP / production config (WS-1).
+# Identical to livekit.yaml except use_external_ip is enabled so WebRTC
+# candidates advertise the node's public IP. The RTP UDP range must be open
+# in the VPC firewall (WS-8) for media to flow to remote callers.
+# API key/secret are injected via LIVEKIT_KEYS env var — not stored here.
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: true
+turn:
+  enabled: false
+# Redis is required for LiveKit Egress (call recording, WS-9).
+redis:
+  address: livekit-redis:6379
+logging:
+  level: info

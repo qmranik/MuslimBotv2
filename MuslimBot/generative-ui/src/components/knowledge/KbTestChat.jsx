@@ -1,3 +1,4 @@
+"use client";
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { checkKbHealth, testChat } from '../../services/kbClient';

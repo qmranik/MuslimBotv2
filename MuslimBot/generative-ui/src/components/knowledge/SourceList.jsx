@@ -1,3 +1,4 @@
+"use client";
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, Trash2, RotateCcw } from 'lucide-react';
 import { deleteSource, listSources, triggerSync } from '../../services/kbClient';
@@ -10,7 +11,7 @@ const STATUS_MAP = {
   queued: { label: 'Queued', className: 'text-slate-600 bg-slate-100 border-slate-200' },
 };
 
-export function SourceList({ refreshKey = 0, onRefresh }) {
+export function SourceList({ refreshKey = 0, onRefresh, visibility = '' }) {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -19,7 +20,7 @@ export function SourceList({ refreshKey = 0, onRefresh }) {
     setLoading(true);
     setError('');
     try {
-      const data = await listSources({ page: 1, pageSize: 50 });
+      const data = await listSources({ page: 1, pageSize: 50, visibility });
       setSources(data.items || []);
     } catch (err) {
       setError(err.message);
@@ -27,7 +28,7 @@ export function SourceList({ refreshKey = 0, onRefresh }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [visibility]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
 

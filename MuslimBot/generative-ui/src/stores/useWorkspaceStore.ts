@@ -3,11 +3,20 @@ import { getWorkspaceUrl } from '../config/workspaceUrls';
 
 export const WORKSPACE_IDS = [
   'command-center',
+  'erp-orders',
+  'erp-customers',
+  'erp-inventory',
+  'erp-pos',
   'knowledge-hub',
-  'erp-ops',
   'automations',
   'support',
   'marketing',
+  'website',
+  'helpdesk',
+  'gameball',
+  'cms',
+  'files',
+  'generative',
 ] as const;
 
 export type WorkspaceId = typeof WORKSPACE_IDS[number];
@@ -27,17 +36,30 @@ function buildWorkspaces(): Record<WorkspaceId, WorkspaceConfig> {
       title: 'Command Center',
       isExternal: false,
     },
+    'erp-orders': {
+      id: 'erp-orders',
+      title: 'Orders & Invoices',
+      isExternal: false,
+    },
+    'erp-customers': {
+      id: 'erp-customers',
+      title: 'Customers',
+      isExternal: false,
+    },
+    'erp-inventory': {
+      id: 'erp-inventory',
+      title: 'Inventory & Stock',
+      isExternal: false,
+    },
+    'erp-pos': {
+      id: 'erp-pos',
+      title: 'Point of Sale',
+      isExternal: false,
+    },
     'knowledge-hub': {
       id: 'knowledge-hub',
       title: 'Knowledge Hub',
       isExternal: false,
-    },
-    'erp-ops': {
-      id: 'erp-ops',
-      title: 'liteERP /ops',
-      targetUrl: getWorkspaceUrl('erp-ops'),
-      isExternal: true,
-      ssoApp: 'erp-ops',
     },
     automations: {
       id: 'automations',
@@ -60,6 +82,46 @@ function buildWorkspaces(): Record<WorkspaceId, WorkspaceConfig> {
       isExternal: true,
       ssoApp: 'postiz',
     },
+    website: {
+      id: 'website',
+      title: 'Website Builder',
+      targetUrl: getWorkspaceUrl('website'),
+      isExternal: true,
+      ssoApp: 'frappe-builder',
+    },
+    helpdesk: {
+      id: 'helpdesk',
+      title: 'Help Desk',
+      targetUrl: getWorkspaceUrl('helpdesk'),
+      isExternal: true,
+      ssoApp: 'helpdesk',
+    },
+    gameball: {
+      id: 'gameball',
+      title: 'Loyalty & Rewards',
+      targetUrl: getWorkspaceUrl('gameball'),
+      isExternal: true,
+      ssoApp: 'gameball',
+    },
+    cms: {
+      id: 'cms',
+      title: 'Content CMS',
+      targetUrl: getWorkspaceUrl('cms'),
+      isExternal: true,
+      ssoApp: 'cms',
+    },
+    files: {
+      id: 'files',
+      title: 'Nextcloud Files',
+      targetUrl: getWorkspaceUrl('files'),
+      isExternal: true,
+      ssoApp: 'nextcloud',
+    },
+    generative: {
+      id: 'generative',
+      title: 'Generative AI',
+      isExternal: false,
+    }
   };
 }
 

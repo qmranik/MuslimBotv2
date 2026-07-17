@@ -1,3 +1,4 @@
+"use client";
 import React, { useMemo } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -6,7 +7,7 @@ import {
 
 const COLORS = ['#6366f1', '#3b82f6', '#10b981', '#ec4899', '#f59e0b', '#ef4444'];
 
-function CustomTooltip({ active, payload, label }) {
+function CustomTooltip({ active, payload, label }: { active?: any, payload?: any, label?: any }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="panel-card text-xs p-3 shadow-lg">
@@ -26,7 +27,7 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-export function GenerativeChart({ type = 'bar', data = [], title = '' }) {
+export function GenerativeChart({ type = 'bar', data = [], title = '' }: { type?: string, data?: any[], title?: string }) {
   if (!data?.length) {
     return (
       <div className="panel-card flex items-center justify-center h-64">

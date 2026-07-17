@@ -1,14 +1,15 @@
-import React, { useState, useMemo } from 'react';
+"use client";
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react';
 
-export function GenerativeTable({ title = 'Generated List', columns = [], data = [] }) {
+export function GenerativeTable({ title = 'Generated List', columns = [], data = [] }: { title?: string, columns?: any[], data?: any[] }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  const requestSort = (key) => {
-    let direction = 'asc';
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
     setSortConfig({ key, direction });
   };
@@ -23,8 +24,9 @@ export function GenerativeTable({ title = 'Generated List', columns = [], data =
     }
     if (sortConfig.key) {
       result.sort((a, b) => {
-        const valA = a[sortConfig.key];
-        const valB = b[sortConfig.key];
+        const key = sortConfig.key as string;
+        const valA = a[key];
+        const valB = b[key];
         const cleanA = typeof valA === 'string' && valA.startsWith('$') ? parseFloat(valA.replace(/[^0-9.-]+/g, '')) : valA;
         const cleanB = typeof valB === 'string' && valB.startsWith('$') ? parseFloat(valB.replace(/[^0-9.-]+/g, '')) : valB;
         if (cleanA < cleanB) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -39,6 +41,9 @@ export function GenerativeTable({ title = 'Generated List', columns = [], data =
     const start = (currentPage - 1) * itemsPerPage;
     return processedData.slice(start, start + itemsPerPage);
   }, [processedData, currentPage]);
+  
+  // Use deferred value to prevent layout thrashing and jitter during fast data streams
+  const deferredPaginatedData = useDeferredValue(paginatedData);
 
   const totalPages = Math.ceil(processedData.length / itemsPerPage) || 1;
 
@@ -91,7 +96,7 @@ export function GenerativeTable({ title = 'Generated List', columns = [], data =
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {paginatedData.length ? paginatedData.map((row, idx) => (
+            {deferredPaginatedData.length ? deferredPaginatedData.map((row, idx) => (
               <tr key={idx} className="hover:bg-slate-50 text-slate-700">
                 {columns.map((col) => (
                   <td key={col.key} className="px-4 py-2.5 font-medium whitespace-nowrap">{renderCell(col.key, row[col.key])}</td>

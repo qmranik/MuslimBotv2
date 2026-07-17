@@ -26,9 +26,10 @@ export async function checkKbHealth() {
   }
 }
 
-export async function listSources({ page = 1, pageSize = 20, status = '' } = {}) {
+export async function listSources({ page = 1, pageSize = 20, status = '', visibility = '' } = {}) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   if (status) params.set('status', status);
+  if (visibility) params.set('visibility', visibility);
   return kbFetch(`/sources?${params}`);
 }
 
@@ -36,16 +37,17 @@ export async function getSourceStatus(sourceId) {
   return kbFetch(`/sources/${encodeURIComponent(sourceId)}`);
 }
 
-export async function uploadDocument(file, title, sourceType = 'document') {
+export async function uploadDocument(file, title, sourceType = 'document', visibility = 'private') {
   const form = new FormData();
   form.append('file', file);
   form.append('title', title || file.name);
   form.append('source_type', sourceType);
+  form.append('visibility', visibility);
   return kbFetch('/sources/upload', { method: 'POST', body: form });
 }
 
-export async function addUrlSource({ title = '', url, depth }) {
-  const body = { title, url };
+export async function addUrlSource({ title = '', url, depth, visibility = 'private' }) {
+  const body = { title, url, visibility };
   if (depth !== undefined && depth !== null) {
     body.depth = depth;
   }
@@ -82,11 +84,12 @@ export async function addLink(title, url) {
   return kbFetch('/sources/link', { method: 'POST', body: form });
 }
 
-export async function addScrapeSource(title, url, depth = 1) {
+export async function addScrapeSource(title, url, depth = 1, visibility = 'private') {
   const form = new FormData();
   form.append('title', title);
   form.append('url', url);
   form.append('depth', String(depth));
+  form.append('visibility', visibility);
   return kbFetch('/sources/scrape', { method: 'POST', body: form });
 }
 

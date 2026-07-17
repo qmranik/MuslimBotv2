@@ -162,13 +162,14 @@ def create_demo_data():
             print(f"  Created item: {idata['code']} - {idata['name']}")
 
             # Add price
-            ip = frappe.get_doc({
-                "doctype": "Item Price",
-                "item_code": idata["code"],
-                "price_list": pl_name,
-                "price_list_rate": idata["rate"],
-            })
-            ip.insert(ignore_permissions=True)
+            if not frappe.db.exists("Item Price", {"item_code": idata["code"], "price_list": pl_name}):
+                ip = frappe.get_doc({
+                    "doctype": "Item Price",
+                    "item_code": idata["code"],
+                    "price_list": pl_name,
+                    "price_list_rate": idata["rate"],
+                })
+                ip.insert(ignore_permissions=True)
         item_codes.append(idata["code"])
 
     # ─── Stock Quantities ──────────────────────────────────────────

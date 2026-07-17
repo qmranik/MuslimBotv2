@@ -1,17 +1,16 @@
 import React from 'react';
-import { Sparkles, Plus, HelpCircle, ScrollText, Key, LogOut } from 'lucide-react';
+import { Sparkles, Plus, HelpCircle, ScrollText, Server } from 'lucide-react';
 import { WorkspaceNav } from '../components/WorkspaceNav';
 
 export function AppSidebar({
   onNewChat,
   erpConnected,
-  erpStats,
   apiStatus,
-  onOpenApiKey,
-  onClearApiKey,
   invoiceCount,
   customerCount,
   itemCount,
+  authMe,
+  onSelectWorkspace,
 }) {
   return (
     <>
@@ -21,7 +20,7 @@ export function AppSidebar({
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h1 className="text-sm font-extrabold tracking-tight text-slate-900 leading-tight">liteERP</h1>
+            <h1 className="text-sm font-extrabold tracking-tight text-slate-900 leading-tight">MuslimBot</h1>
             <span className="text-[10px] text-indigo-600 uppercase tracking-widest font-bold">Unified GenUI</span>
           </div>
         </div>
@@ -35,7 +34,7 @@ export function AppSidebar({
           New Chat
         </button>
 
-        <WorkspaceNav layout="sidebar" />
+        <WorkspaceNav layout="sidebar" onSelect={onSelectWorkspace} />
 
         <div className="panel-card p-3 space-y-2">
           <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Data Snapshot</p>
@@ -73,23 +72,19 @@ export function AppSidebar({
           </button>
         </div>
 
-        {apiStatus === 'live' ? (
-          <div className="flex items-center justify-between p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl">
-            <span className="text-xs text-indigo-700 font-semibold">Gemini Active</span>
-            <button type="button" onClick={onClearApiKey} className="text-slate-400 hover:text-slate-600">
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
+        <div className="flex items-center justify-between p-2.5 bg-indigo-50 border border-indigo-100 rounded-xl">
+          <div className="flex items-center gap-2 min-w-0">
+            <Server className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs text-indigo-700 font-semibold truncate">
+                {apiStatus === 'server' ? 'Server brain' : 'AI mode'}
+              </p>
+              <p className="text-[10px] text-indigo-500 truncate">
+                {authMe?.email || authMe?.tenant_id || 'Authentik session'}
+              </p>
+            </div>
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onOpenApiKey}
-            className="w-full py-2 flex items-center justify-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors"
-          >
-            <Key className="w-3.5 h-3.5" />
-            Activate Gemini
-          </button>
-        )}
+        </div>
       </div>
     </>
   );

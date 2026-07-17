@@ -17,18 +17,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ ($env.KB_BFF_URL || 'http://muslimbot-kb-bff:8787') + '/chat' }}",
+        "url": "={{ ($env.ORCHESTRATOR_URL || 'http://go-orchestrator:8080') + '/v1/kb/chat' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            },
-            {
-              "name": "X-KB-API-Key",
-              "value": "={{ $env.KB_BFF_API_KEY }}"
-            }
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-KB-API-Key", "value": "={{ $env.KBBFF_API_KEY || $env.KB_BFF_API_KEY }}" },
+            { "name": "X-Tenant-Id", "value": "={{ $json.body?.tenant || $json.tenant || 'default' }}" }
           ]
         },
         "sendBody": true,
@@ -36,15 +31,15 @@
         "jsonBody": "={\n  \"message\": {{ JSON.stringify($json.body?.message || $json.message || '') }},\n  \"session_id\": {{ JSON.stringify($json.body?.session_id || $json.session_id || 'demo') }}\n}",
         "options": {}
       },
-      "id": "kb-bff-chat",
-      "name": "KB BFF Chat",
+      "id": "orchestrator-kb-chat",
+      "name": "Orchestrator Vertex KB Chat",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [420, 300]
     },
     {
       "parameters": {
-        "jsCode": "const webhook = $('Webhook chat-support').first().json.body || $('Webhook chat-support').first().json;\nconst chat = $input.first().json;\nconst reply = chat.reply || chat.message?.reply || 'Sorry, I could not generate a response.';\nconst session_id = chat.session_id || webhook.session_id || 'demo';\nreturn [{ json: { reply, session_id, status: chat.status || 'ok' } }];"
+        "jsCode": "const webhook = $('Webhook chat-support').first().json.body || $('Webhook chat-support').first().json;\nconst chat = $input.first().json;\nconst reply = chat.reply || chat.message?.reply || 'Sorry, I could not generate a response.';\nconst session_id = chat.session_id || webhook.session_id || 'demo';\nreturn [{ json: { reply, session_id, status: chat.status || 'ok', engine: 'vertex_rag' } }];"
       },
       "id": "format-reply",
       "name": "Format Reply",
@@ -67,9 +62,9 @@
   ],
   "connections": {
     "Webhook chat-support": {
-      "main": [[{ "node": "KB BFF Chat", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Orchestrator Vertex KB Chat", "type": "main", "index": 0 }]]
     },
-    "KB BFF Chat": {
+    "Orchestrator Vertex KB Chat": {
       "main": [[{ "node": "Format Reply", "type": "main", "index": 0 }]]
     },
     "Format Reply": {
@@ -77,5 +72,5 @@
     }
   },
   "settings": { "executionOrder": "v1" },
-  "tags": [{ "name": "small-erp" }, { "name": "chat" }]
+  "tags": [{ "name": "small-erp" }, { "name": "chat" }, { "name": "vertex-rag" }]
 }

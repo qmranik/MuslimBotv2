@@ -1,0 +1,124 @@
+{
+  "name": "Chatwoot Support Vertex RAG",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatwoot",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-chatwoot",
+      "name": "Webhook chatwoot",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst body = raw.body || raw;\nconst event = body.event || body.message_type || '';\nconst content = body.content || body.message?.content || body.conversation?.messages?.[0]?.content || '';\nconst accountId = body.account?.id || body.account_id || '';\nconst conversationId = body.conversation?.id || body.conversation_id || '';\nconst senderType = body.sender?.type || body.message_type || '';\nconst loop = senderType === 'agent_bot' || body.private === true || !content;\nif (loop) {\n  return [{ json: { skip: true, reason: 'bot_loop_or_empty', content, conversationId } }];\n}\nconst angry = /angry|furious|lawsuit|refund now|manager|escalate/i.test(String(content));\nreturn [{ json: { skip: false, content, conversationId, accountId, angry, tenant: raw.headers?.['x-tenant-id'] || ('chatwoot-' + accountId) } }];"
+      },
+      "id": "loop-guard",
+      "name": "Loop Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skip }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "if-continue",
+      "name": "Continue?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.ORCHESTRATOR_URL || 'http://go-orchestrator:8080') + '/v1/kb/retrieve' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-KB-API-Key", "value": "={{ $env.KBBFF_API_KEY || $env.KB_BFF_API_KEY }}" },
+            { "name": "X-Tenant-Id", "value": "={{ $json.tenant || 'default' }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"query\": {{ JSON.stringify($json.content) }},\n  \"top_k\": 6\n}",
+        "options": {}
+      },
+      "id": "vertex-retrieve",
+      "name": "Vertex retrieveContexts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Loop Guard').first().json;\nconst rag = $input.first().json;\nconst chunks = rag.chunks || [];\nconst context = chunks.map(c => c.text || '').filter(Boolean).join('\\n\\n---\\n\\n');\nlet reply = context\n  ? ('Based on our knowledge base:\\n' + context.slice(0, 1200))\n  : 'I could not find matching policy context. A teammate can help further.';\nif (prev.angry) {\n  reply = '[HANDOFF_REQUIRED] ' + reply;\n}\nreturn [{ json: { ...prev, reply, chunks_used: chunks.length, handoff: !!prev.angry } }];"
+      },
+      "id": "compose-reply",
+      "name": "Compose Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1040, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ reply: $json.reply, handoff: $json.handoff, conversation_id: $json.conversationId, chunks_used: $json.chunks_used }) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1260, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'skipped', reason: $json.reason }) }}",
+        "options": {}
+      },
+      "id": "respond-skip",
+      "name": "Respond Skip",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [820, 420]
+    }
+  ],
+  "connections": {
+    "Webhook chatwoot": {
+      "main": [[{ "node": "Loop Guard", "type": "main", "index": 0 }]]
+    },
+    "Loop Guard": {
+      "main": [[{ "node": "Continue?", "type": "main", "index": 0 }]]
+    },
+    "Continue?": {
+      "main": [
+        [{ "node": "Vertex retrieveContexts", "type": "main", "index": 0 }],
+        [{ "node": "Respond Skip", "type": "main", "index": 0 }]
+      ]
+    },
+    "Vertex retrieveContexts": {
+      "main": [[{ "node": "Compose Reply", "type": "main", "index": 0 }]]
+    },
+    "Compose Reply": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "muslimbot" }, { "name": "chatwoot" }, { "name": "vertex-rag" }]
+}

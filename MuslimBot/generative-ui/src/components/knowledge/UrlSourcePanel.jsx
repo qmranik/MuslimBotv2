@@ -1,3 +1,4 @@
+"use client";
 import React, { useEffect, useState } from 'react';
 import { Globe, Loader2, Link2 } from 'lucide-react';
 import { addUrlSource, classifyUrl } from '../../services/kbClient';

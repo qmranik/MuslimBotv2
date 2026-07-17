@@ -1,12 +1,38 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
 
 @import "tailwindcss";
 
+@theme {
+  --color-alabaster: #FDFBF7;
+  --color-pure-white: #FFFFFF;
+  --color-emerald-deep: #047857;
+  --color-charcoal: #1F2937;
+  --color-sage: #9CA3AF;
+}
+
 :root {
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display: 'Outfit', sans-serif;
-  --canvas-bg: #f8fafc;
-  --text-primary: #1e293b;
+  --font-display: 'Playfair Display', serif;
+  
+  --canvas-bg: var(--color-alabaster);
+  --card-bg: var(--color-pure-white);
+  --text-primary: var(--color-charcoal);
+  --accent-primary: var(--color-emerald-deep);
+  --accent-secondary: var(--color-sage);
+  
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.03);
+  --shadow-hover: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+.dark {
+  --canvas-bg: #111827; /* Deep charcoal for generative UI */
+  --card-bg: #1F2937;
+  --text-primary: #FDFBF7;
+  --accent-primary: #10B981; /* Lighter emerald for dark mode */
+  --accent-secondary: #6B7280;
+  
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --shadow-hover: 0 10px 30px rgba(0, 0, 0, 0.4);
 }
 
 body {
@@ -27,100 +53,59 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(241, 245, 249, 0.8);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(99, 102, 241, 0.35);
+  background: var(--accent-secondary);
   border-radius: 9999px;
+  opacity: 0.5;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.55);
+  background: var(--accent-primary);
 }
 
 .panel-card {
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: var(--card-bg);
   border-radius: 1rem;
-  box-shadow: 0 8px 30px rgb(0 0 0 / 0.04);
+  box-shadow: var(--shadow-soft);
+  border: 1px solid rgba(226, 232, 240, 0.4);
+}
+
+.dark .panel-card {
+  border: 1px solid rgba(75, 85, 99, 0.4);
 }
 
 .panel-elevated {
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: var(--card-bg);
   border-radius: 1.25rem;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.06);
+  box-shadow: var(--shadow-hover);
 }
 
 .panel-interactive {
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: var(--card-bg);
   border-radius: 1rem;
-  box-shadow: 0 8px 30px rgb(0 0 0 / 0.04);
+  box-shadow: var(--shadow-soft);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
 }
 
 .panel-interactive:hover {
-  border-color: rgba(99, 102, 241, 0.35);
-  box-shadow: 0 16px 40px rgb(99 102 241 / 0.08);
-  transform: translateY(-1px);
+  border-color: rgba(4, 120, 87, 0.3);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
 }
 
-.accent-gradient {
-  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-}
-
-.accent-gradient-text {
-  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.dark .panel-interactive:hover {
+  border-color: rgba(16, 185, 129, 0.3);
 }
 
 .portal-frame {
-  background: #f1f5f9;
-  padding: 0.5rem;
-  border-radius: 1rem;
+  background: var(--canvas-bg);
+  padding: 0;
   height: 100%;
   overflow: hidden;
-}
-
-.glass-panel {
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 8px 30px rgb(0 0 0 / 0.04);
-}
-
-.glass-panel-interactive {
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 8px 30px rgb(0 0 0 / 0.04);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glass-panel-interactive:hover {
-  border-color: rgba(99, 102, 241, 0.35);
-  box-shadow: 0 12px 32px rgb(99 102 241 / 0.08);
-  transform: translateY(-1px);
-}
-
-.glow-purple {
-  box-shadow: 0 8px 30px rgb(99 102 241 / 0.08);
-}
-
-.glow-blue {
-  box-shadow: 0 8px 30px rgb(59 130 246 / 0.08);
-}
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-.shimmer-loader {
-  background: linear-gradient(90deg, rgba(226, 232, 240, 0.6) 25%, rgba(203, 213, 225, 0.6) 50%, rgba(226, 232, 240, 0.6) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite linear;
 }
 
 @keyframes slideUpFade {

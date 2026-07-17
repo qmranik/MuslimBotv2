@@ -1,3 +1,4 @@
+"use client";
 import React, { useState } from 'react';
 import { FileJson, Loader2 } from 'lucide-react';
 import { addBulkImport } from '../../services/kbClient';

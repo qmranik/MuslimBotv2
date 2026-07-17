@@ -1,0 +1,76 @@
+{
+  "name": "Nextcloud to Vertex KB Ingest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nextcloud-file",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-nc",
+      "name": "Webhook nextcloud-file",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst url = body.download_url || body.url || body.file_url || '';\nconst title = body.title || body.name || url.split('/').pop() || 'nextcloud-file';\nconst tenant = body.tenant || $input.first().json.headers?.['x-tenant-id'] || 'default';\nconst visibility = body.visibility === 'public' ? 'public' : 'private';\nif (!url) {\n  return [{ json: { ok: false, error: 'download_url required' } }];\n}\nreturn [{ json: { ok: true, url, title, tenant, visibility } }];"
+      },
+      "id": "normalize",
+      "name": "Normalize Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.ORCHESTRATOR_URL || 'http://go-orchestrator:8080') + '/v1/kb/sources/url' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-KB-API-Key", "value": "={{ $env.KBBFF_API_KEY || $env.KB_BFF_API_KEY }}" },
+            { "name": "X-Tenant-Id", "value": "={{ $json.tenant }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"title\": {{ JSON.stringify($json.title) }},\n  \"url\": {{ JSON.stringify($json.url) }},\n  \"visibility\": {{ JSON.stringify($json.visibility) }}\n}",
+        "options": {}
+      },
+      "id": "orchestrator-ingest",
+      "name": "Orchestrator ImportRagFiles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [860, 300]
+    }
+  ],
+  "connections": {
+    "Webhook nextcloud-file": {
+      "main": [[{ "node": "Normalize Payload", "type": "main", "index": 0 }]]
+    },
+    "Normalize Payload": {
+      "main": [[{ "node": "Orchestrator ImportRagFiles", "type": "main", "index": 0 }]]
+    },
+    "Orchestrator ImportRagFiles": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "muslimbot" }, { "name": "nextcloud" }, { "name": "vertex-rag" }]
+}

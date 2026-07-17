@@ -1,6 +1,8 @@
-livekit-agents>=0.11.2
-livekit-plugins-google>=0.6.2
-livekit-api>=0.8.0
+# Voice agent (agent.py) — livekit-agents 1.x AgentSession API + Gemini Live + MCP.
+# The KB BFF (bff_main.py) shares this file but does not import livekit.
+livekit-agents[mcp]~=1.5
+livekit-plugins-google~=1.0
+python-dotenv>=1.0.0
 google-api-python-client>=2.130.0
 google-auth-oauthlib>=1.2.0
 google-auth-httplib2>=0.2.0

@@ -1,3 +1,4 @@
+"use client";
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Send, Sparkles, RefreshCw, MessageCircle, ChevronDown, ChevronUp, X, Mic,

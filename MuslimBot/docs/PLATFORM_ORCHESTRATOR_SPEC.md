@@ -3,95 +3,118 @@
 This document defines the unified backend orchestration layer (`go-orchestrator`).
 
 ## 1. Executive Summary
+
 The Unified Backend Orchestrator sits behind **Traefik** (edge proxy) and **Authentik** (IdP) to provide:
-- **One tenant-aware API** for all clients (`/v1/*`)
-- **Authentik-based identity** — no custom JWT or password handling
-- **Service registry & proxy** routing to Frappe, n8n, KB BFF, Chatwoot, Postiz
-- **Event facade** for cross-service events via the outbox pattern
 
-## 2. Authentication Architecture
+- One tenant-aware API for all clients (`/v1/*`)
+- Authentik-based identity (no custom JWT)
+- ERP proxy, AI brain, portals SSO, webhook aggregation, event outbox
+- **Vertex AI RAG Engine adapter** (ingest via GCS + `ImportRagFiles`, retrieve via `retrieveContexts`) — no custom vector store
 
-### Auth Flow
+## 2. Authentication
+
 ```
-Browser → Traefik (:443) → ForwardAuth → Authentik validates .smb.localhost cookie
-  → Traefik injects X-authentik-* headers → Go Orchestrator reads headers
+Browser → Traefik → ForwardAuth → Authentik
+  → X-authentik-* headers → Go Orchestrator
 ```
 
-### Identity Headers (set by Authentik → Traefik → Go)
 | Header | Required | Description |
 |--------|----------|-------------|
-| `X-authentik-email` | ✅ | Verified user email |
-| `X-authentik-username` | ○ | Display username |
-| `X-authentik-groups` | ○ | Comma-separated group slugs |
-| `X-authentik-name` | ○ | Full display name |
+| `X-authentik-email` | yes | Verified user email |
+| `X-authentik-username` | no | Display username |
+| `X-authentik-groups` | no | Comma-separated groups |
+| `X-authentik-name` | no | Full name |
 
-### What Was Removed
-- ~~`POST /v1/auth/login`~~ — Authentik handles login
-- ~~`POST /v1/auth/refresh`~~ — Authentik handles token refresh
-- ~~`POST /v1/auth/logout`~~ — Authentik handles logout
-- ~~`POST /v1/auth/exchange/frappe`~~ — Obsolete session exchange
-- ~~JWT issuance / bcrypt password hashing~~ — Authentik owns credentials
-- ~~`User` and `Session` GORM models~~ — Authentik owns user/session state
+Service agents may use `X-KB-API-Key` (+ optional `X-Tenant-Id`). Tenant resolution: Host subdomain (`PLATFORM_BASE_DOMAIN`) → `X-Tenant-Id` → email mapping → `default`.
+
+### Local `ENV=local` auth bypass (MVT)
+
+When `ENV=local`, the orchestrator skips Authentik/Traefik for browser and curl testing:
+
+- If `X-authentik-email` or a valid `X-KB-API-Key` is present, those paths win unchanged.
+- Otherwise identity is injected as `Administrator@small.localhost` / groups `admins` / tenant from Host or `X-Tenant-Id` or `default`.
+- `GET /v1/auth/me` reports `"auth": "local-bypass"` when the mock was used.
+
+Do not set `ENV=local` in production or staging behind Traefik.
 
 ## 3. Architecture
 
 ```
 go-orchestrator/
-├── cmd/server/main.go       # Engine entrypoint
-├── internal/
-│   ├── auth/middleware.go   # Authentik ForwardAuth header middleware
-│   ├── gateway/proxy.go     # Frappe and KB BFF proxy (token masking)
-│   ├── ai/router.go         # Generative AI Chat handler (Gemini)
-│   ├── portals/handler.go   # SSO Bridge for embedded iframes
-│   ├── config/config.go     # Environment parsing
-│   ├── events/handler.go    # Event outbox ingestion
-│   ├── tenants/handler.go   # Tenant lifecycle APIs
-│   └── store/db.go          # GORM models (TenantUserMapping, Tenant, EventOutbox)
-├── go.mod
-└── go.sum
+├── cmd/server/main.go
+└── internal/
+    ├── auth/           # Authentik middleware + TenantFromHost
+    ├── ai/             # generate-ui, tool executor, Vertex KB handlers
+    ├── knowledge/      # org KB metadata + public/private visibility
+    ├── gateway/        # Frappe token-masked proxy
+    ├── portals/        # iframe SSO URLs
+    ├── webhooks/       # public ingress → n8n
+    ├── events/         # outbox ingest + dispatcher
+    ├── workflows/      # POST /workflows/trigger → outbox
+    ├── tenants/        # create / onboard / features / status
+    ├── config/
+    └── store/          # Tenant, TenantUserMapping, EventOutbox, KBSource
 ```
 
 ## 4. Endpoints
 
 ### Public
-* `GET /v1/sys/health` — Service health + connectivity diagnostics
 
-### Protected (Authentik ForwardAuth required)
-* `GET /v1/auth/me` — Returns authenticated user context from Authentik headers
-* `ANY /v1/erp/*path` — Reverse proxies ERPNext, injects `X-Frappe-User` from Authentik identity
-* `ANY /v1/kb/*path` — Proxies KB BFF with API key masking and tenant context
-* `GET /v1/portals/:app/url` — Returns embed URLs with SSO handshake per app
-* `POST /v1/ai/chat` — Generative AI responses via Gemini (server-side API key)
-* `POST /v1/events/ingest` — Platform event ingestion into outbox
-* `POST /v1/tenants` — Create tenant
-* `GET /v1/tenants/:id/status` — Tenant status
-* `POST /v1/tenants/:id/onboard` — Tenant onboarding
-* `PATCH /v1/tenants/:id/features` — Feature flag updates
-* `GET /v1/platform/services` — Service registry status
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/v1/sys/health` | Dependency probes + `vertex_rag` configured/unconfigured |
+| POST | `/v1/webhooks/:source` | Secret-gated; outbox + async n8n |
 
-## 5. Integration Matrix
+### Protected (Authentik or service key)
 
-| System | Auth Mechanism | Handshake Flow |
-|--------|---------------|----------------|
-| **Go Orchestrator** | Forward Auth | Traefik → Authentik → Go reads `X-authentik-*` headers |
-| **Nextcloud** | OIDC (Native) | Iframe loads → Nextcloud reads OIDC config → Authentik validates `.smb.localhost` cookie → User is in |
-| **n8n** | Forward Auth | Iframe loads → Traefik intercepts → Authentik validates cookie → Traefik injects headers |
-| **Chatwoot** | Magic Link API | React calls Go `/v1/portals/chatwoot/url` → Go requests Chatwoot API → Returns magic link URL |
-| **Postiz** | OIDC (Native) | Same as Nextcloud — Authentik cookie handles SSO |
-| **Frappe/ERPNext** | Token Proxy | Go injects master `Authorization: token` header + `X-Frappe-User` from Authentik identity |
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/v1/auth/me` | Identity + tenant |
+| ANY | `/v1/erp/*path` | Frappe proxy with masked token |
+| GET/POST/DELETE | `/v1/kb/sources*` | Source CRUD + upload/URL → GCS → Vertex |
+| POST | `/v1/kb/retrieve` | Vertex `retrieveContexts` |
+| POST | `/v1/kb/chat` | Vertex retrieve + Gemini |
+| POST/GET/DELETE | `/v1/kb/org*` | Org metadata + visibility governance |
+| GET | `/v1/portals/:app/url` | erp-ops, n8n, chatwoot, postiz, nextcloud |
+| POST | `/v1/ai/chat` | Legacy plain chat |
+| POST | `/v1/ai/generate-ui` | UiDescriptor brain |
+| POST | `/v1/ai/tool/execute` | 21-tool catalog (KB tool = Vertex) |
+| POST | `/v1/workflows/trigger` | Enqueue → outbox dispatcher → n8n |
+| POST | `/v1/events/ingest` | Outbox pending |
+| POST | `/v1/tenants` | Create |
+| POST | `/v1/tenants/:id/onboard` | Shared-schema v1 activate |
+| GET | `/v1/tenants/:id/status` | Status |
+| PATCH | `/v1/tenants/:id/features` | Feature flags JSON |
+| GET | `/v1/platform/services` | Same as health |
 
-## 6. Infrastructure (docker-compose.extended.yml)
+## 5. Knowledge = Vertex AI RAG Engine
 
-| Service | Image | Purpose |
-|---------|-------|---------|
-| `platform-postgres` | `postgres:15-alpine` | Shared DB: Authentik config + orchestrator tenant data |
-| `platform-redis` | `redis:7-alpine` | Authentik session cache + token validation |
-| `authentik-server` | `ghcr.io/goauthentik/server` | Identity Provider — web UI, OIDC, ForwardAuth outpost |
-| `authentik-worker` | `ghcr.io/goauthentik/server` | Background tasks (email, sync, cleanup) |
-| `traefik` | `traefik:v3.1` | Edge proxy — TLS termination, ForwardAuth middleware |
+| Step | Owner |
+|------|--------|
+| Upload / URL scrape | Orchestrator → GCS |
+| Chunk / embed / index | **Vertex RagCorpus** (`GCP_RAG_CORPUS_ID`) |
+| Retrieve | `retrieveContexts` |
+| ACL metadata | Postgres `KBSource` (`visibility`, `tenant_id`, `rag_file_id`) |
 
-## 7. Next Steps
-1. Configure Authentik OIDC providers for Nextcloud, Postiz
-2. Build async event dispatcher to route outbox events to n8n webhooks
-3. Implement tenant provisioning workflow (Authentik group → Frappe site)
-4. Add Chatwoot SSO token API integration with real credentials
+Required env: `GCP_PROJECT_ID`, `GCP_LOCATION`, `GCP_RAG_CORPUS_ID`, `GCS_BUCKET_NAME`. Without them, KB retrieve/chat/upload return **503** (fail closed — no SQLite RAG fallback).
+
+## 6. Integration Matrix
+
+| System | Auth | Notes |
+|--------|------|-------|
+| Go Orchestrator | Forward Auth | `X-authentik-*` |
+| Nextcloud | OIDC | Portal URL + files workspace |
+| n8n | Forward Auth | `N8N_PUBLIC_URL` |
+| Chatwoot | Platform API SSO | `CHATWOOT_PLATFORM_TOKEN` → `/platform/api/v1/users/{id}/login` |
+| Postiz | OIDC | |
+| Frappe | Token proxy | `Authorization: token` + `X-Frappe-User` + `X-Tenant-Id` |
+| Vertex RAG | ADC / workload identity | Managed RAG only |
+
+## 7. Infra
+
+See `docker-compose.extended.yml`: platform-postgres/redis, Authentik, Traefik, go-orchestrator on `api.smb.localhost`.
+
+## 8. Related
+
+- Voice SIP: [VOICE_SIP_CHECKLIST.md](VOICE_SIP_CHECKLIST.md)
+- n8n templates: `configs/n8n/workflow-chatwoot-support-vertex.json`, `configs/n8n/workflow-nextcloud-kb-ingest.json`
