@@ -79,7 +79,7 @@ services:
     labels:
       - "traefik.enable=true"
       # Authentik Web UI / API
-      - "traefik.http.routers.authentik.rule=Host(`auth.smb.localhost`)"
+      - "traefik.http.routers.authentik.rule=Host(`auth.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.authentik.entrypoints=websecure"
       - "traefik.http.routers.authentik.tls=true"
       - "traefik.http.services.authentik.loadbalancer.server.port=9000"
@@ -183,7 +183,7 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.orchestrator.rule=Host(`api.smb.localhost`)"
+      - "traefik.http.routers.orchestrator.rule=Host(`api.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.orchestrator.entrypoints=websecure"
       - "traefik.http.routers.orchestrator.tls=true"
       - "traefik.http.routers.orchestrator.middlewares=authentik-forwardauth@file"
@@ -243,7 +243,7 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.trypost.rule=Host(`social.smb.localhost`)"
+      - "traefik.http.routers.trypost.rule=Host(`social.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.trypost.entrypoints=websecure"
       - "traefik.http.routers.trypost.tls=true"
       # ERP-style: MCP/API paths must stay reachable without ForwardAuth (bearer-token clients).
@@ -271,6 +271,47 @@ services:
     depends_on:
       trypost:
         condition: service_started
+    networks:
+      - platform-net
+
+  # ── Core Services Edge Proxy Overrides ───────────────────────────
+  frappe-web:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frappe.rule=Host(`erp.${PUBLIC_DOMAIN:-smb.localhost}`)"
+      - "traefik.http.routers.frappe.entrypoints=websecure"
+      - "traefik.http.routers.frappe.tls=true"
+      - "traefik.http.services.frappe.loadbalancer.server.port=8000"
+    networks:
+      - platform-net
+
+  n8n:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`n8n.${PUBLIC_DOMAIN:-smb.localhost}`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls=true"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+    networks:
+      - platform-net
+
+  chatwoot-rails:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chatwoot.rule=Host(`chatwoot.${PUBLIC_DOMAIN:-smb.localhost}`)"
+      - "traefik.http.routers.chatwoot.entrypoints=websecure"
+      - "traefik.http.routers.chatwoot.tls=true"
+      - "traefik.http.services.chatwoot.loadbalancer.server.port=3000"
+    networks:
+      - platform-net
+
+  generative-ui:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.genui.rule=Host(`ui.${PUBLIC_DOMAIN:-smb.localhost}`)"
+      - "traefik.http.routers.genui.entrypoints=websecure"
+      - "traefik.http.routers.genui.tls=true"
+      - "traefik.http.services.genui.loadbalancer.server.port=3000"
     networks:
       - platform-net
 

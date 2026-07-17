@@ -49,7 +49,8 @@ git submodule update --init --recursive
 
 echo "==> Configuring .env..."
 cd /opt/muslimbot/repo/MuslimBot
-if [ ! -f "/opt/muslimbot/secrets/muslimbot.env" ]; then
+if [ ! -f "/opt/muslimbot/secrets/muslimbot.env" ] || ! grep -q "PUBLIC_DOMAIN" "/opt/muslimbot/secrets/muslimbot.env"; then
+  rm -f /opt/muslimbot/secrets/muslimbot.env
   cp .env.template /opt/muslimbot/secrets/muslimbot.env
   chmod 600 /opt/muslimbot/secrets/muslimbot.env
   ln -sf /opt/muslimbot/secrets/muslimbot.env .env
@@ -66,18 +67,21 @@ if [ ! -f "/opt/muslimbot/secrets/muslimbot.env" ]; then
   sed -i "s/^AUTHENTIK_SECRET_KEY=.*/AUTHENTIK_SECRET_KEY=$(openssl rand -hex 64)/" .env
   sed -i "s/^TRYPOST_DB_PASSWORD=.*/TRYPOST_DB_PASSWORD=$(openssl rand -hex 24)/" .env
   sed -i "s/^TRYPOST_APP_KEY=.*/TRYPOST_APP_KEY=base64:$(openssl rand -base64 32)/" .env
+  sed -i "s/^POSTIZ_DB_PASSWORD=.*/POSTIZ_DB_PASSWORD=$(openssl rand -hex 24)/" .env
   
   # Determine public IP and set URLs
   PUBLIC_IP=$(curl -s ifconfig.me || curl -s ifconfig.co)
   if [ -n "$PUBLIC_IP" ]; then
     echo "Detected public IP: $PUBLIC_IP"
-    sed -i "s|^DEMO_PUBLIC_URL=.*|DEMO_PUBLIC_URL=http://${PUBLIC_IP}|" .env
-    sed -i "s|^FRAPPE_SITE_NAME=.*|FRAPPE_SITE_NAME=small.localhost|" .env
-    sed -i "s|^FRAPPE_SITE_HOST=.*|FRAPPE_SITE_HOST=small.localhost:8000|" .env
-    sed -i "s|^N8N_HOST=.*|N8N_HOST=${PUBLIC_IP}|" .env
-    sed -i "s|^N8N_PROTOCOL=.*|N8N_PROTOCOL=http|" .env
-    sed -i "s|^N8N_WEBHOOK_URL=.*|N8N_WEBHOOK_URL=http://${PUBLIC_IP}:5678|" .env
-    sed -i "s|^CHATWOOT_FRONTEND_URL=.*|CHATWOOT_FRONTEND_URL=http://${PUBLIC_IP}:3000|" .env
+    PUBLIC_DOMAIN="${PUBLIC_IP}.nip.io"
+    echo "PUBLIC_DOMAIN=${PUBLIC_DOMAIN}" >> .env
+    sed -i "s|^DEMO_PUBLIC_URL=.*|DEMO_PUBLIC_URL=https://erp.${PUBLIC_DOMAIN}|" .env
+    sed -i "s|^FRAPPE_SITE_NAME=.*|FRAPPE_SITE_NAME=erp.${PUBLIC_DOMAIN}|" .env
+    sed -i "s|^FRAPPE_SITE_HOST=.*|FRAPPE_SITE_HOST=erp.${PUBLIC_DOMAIN}|" .env
+    sed -i "s|^N8N_HOST=.*|N8N_HOST=n8n.${PUBLIC_DOMAIN}|" .env
+    sed -i "s|^N8N_PROTOCOL=.*|N8N_PROTOCOL=https|" .env
+    sed -i "s|^N8N_WEBHOOK_URL=.*|N8N_WEBHOOK_URL=https://n8n.${PUBLIC_DOMAIN}|" .env
+    sed -i "s|^CHATWOOT_FRONTEND_URL=.*|CHATWOOT_FRONTEND_URL=https://chatwoot.${PUBLIC_DOMAIN}|" .env
   else
     echo "Warning: Could not detect public IP. You will need to edit /opt/muslimbot/secrets/muslimbot.env manually."
   fi
