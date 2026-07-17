@@ -78,7 +78,7 @@ fi
 echo "-> Preparing Chatwoot database (first run)..."
 $COMPOSE run --rm chatwoot-rails bundle exec rails db:chatwoot_prepare || echo "Chatwoot prepare skipped or already done"
 
-$COMPOSE restart frappe-web frappe-scheduler frappe-worker-default frappe-worker-short frappe-worker-long frappe-socketio chatwoot-rails chatwoot-worker
+$COMPOSE restart frappe-web frappe-scheduler frappe-worker-default frappe-socketio chatwoot-rails chatwoot-worker
 
 echo ""
 echo "Demo stack ready:"

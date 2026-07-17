@@ -50,7 +50,7 @@ x-frappe-common: &frappe-common
     - smb-net
 
 x-chatwoot-common: &chatwoot-common
-  image: chatwoot/chatwoot:latest
+  image: chatwoot/chatwoot:v3.10.1
   restart: unless-stopped
   env_file: .env
   environment: &chatwoot-env
