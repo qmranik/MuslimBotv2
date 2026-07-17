@@ -46,8 +46,8 @@ republishes their tools to the GenUI AI (`internal/ai/router.go`). Servers are d
 Added to `internal/config/config.go` and `docker-compose.extended.yml`:
 
 - `TRYPOST_URL` — embeddable portal URL (supersedes `POSTIZ_URL`, kept as a deprecated fallback).
-- `TRYPOST_MCP_URL` — TryPost MCP HTTP endpoint (empty by default; **confirm path** at
-  docs.trypost.it/self-hosting — do not hardcode a guess).
+- `TRYPOST_MCP_URL` — TryPost MCP endpoint. Confirmed: `<trypost-host>/mcp/trypost`
+  (internal `http://trypost/mcp/trypost`), bearer auth. Source: docs.trypost.it/ai/introduction.
 - `TRYPOST_API_TOKEN` — bearer for MCP/REST.
 - `TRYPOST_MCP_ENABLED` / `CHATWOOT_MCP_ENABLED` — per-server gates.
 - Chatwoot MCP reuses existing `CHATWOOT_URL` + `CHATWOOT_API_TOKEN` — **no new secret**.
@@ -70,23 +70,29 @@ Added to `internal/config/config.go` and `docker-compose.extended.yml`:
 - **mcp-servers/:** `registry.yaml`, `chatwoot-mcp/README.md`, `trypost-mcp/README.md`,
   `scripts/mcp/run-chatwoot-mcp.sh` (fail-loud launcher).
 
-## 7. Follow-up (deferred, tracked here)
+## 6b. Also implemented (this iteration)
 
-1. **Orchestrator MCP host runtime** — `internal/mcp/` package: HTTP MCP client (TryPost),
-   stdio subprocess client (chatwoot), tool discovery + republish to the router, per-tenant
-   scoping, timeouts/rate limits. Needs the confirmed TryPost MCP endpoint + integration tests
-   → do **after** the restructure Phase 2 (CI repoint) lands.
-2. **Vendor** `fazer-ai/mcp-chatwoot` and `fazer-ai/chatwoot-skills` as submodules; bundle
-   `bun` into the orchestrator image (or the gateway sidecar).
-3. **TryPost deployment** — use the upstream self-host compose; attach to `smb-net`; wire ACME
-   router `social.<domain>` (Phase C edge work).
-4. **GenUI relabel (front-end, not done here per working-constraint #2)** — rename
-   Postiz→TryPost and route `postiz-social`→`trypost-social` across:
-   `src/config/systemsTabs.js` (`name`, `href`, `ssoApp`), `src/config/workspaceUrls.js`
-   (`NEXT_PUBLIC_WS_POSTIZ_URL`→`..._TRYPOST_URL`), `src/stores/useWorkspaceStore.ts`
-   (`title`, `ssoApp`), `src/components/MuslimBotShell.jsx` (route map), `src/components/Sidebar.tsx`,
-   `src/components/WorkspaceNav.jsx`, the `src/app/postiz-social/` route dir, and demo copy in
-   `src/page-components/*`. The `postiz` portal alias keeps SSO working until this lands.
+- **Orchestrator MCP host runtime** — `internal/mcp/` (JSON-RPC 2.0 client for HTTP + stdio,
+  lazy per-server connect, tool discovery, tool-call). Exposed at `GET /v1/mcp/servers`,
+  `GET /v1/mcp/tools`, `POST /v1/mcp/call`. Unit-tested over HTTP (`internal/mcp/client_test.go`).
+- **AI agent function-calling** — `internal/ai/router.go` gives Gemini `mcp_list_tools` + `mcp_call`
+  and runs a tool loop, so GenUI's `/v1/ai/chat` drives Chatwoot + TryPost tools with no client changes.
+- **TryPost deployment stack** — `docker-compose.extended.yml`: `trypost` (build from vendored
+  source), `trypost-postgres` (PG18), `trypost-horizon`, `trypost-scheduler`, Traefik router
+  `social.smb.localhost`, fail-loud secrets (`TRYPOST_APP_KEY`, `TRYPOST_DB_PASSWORD`).
+- **GenUI relabel** — Postiz→TryPost across `systemsTabs.js`, `workspaceUrls.js`,
+  `useWorkspaceStore.ts`, `MuslimBotShell.jsx`, `Sidebar.tsx`, `WorkspaceNav.jsx`, and the
+  `app/postiz-social`→`app/trypost-social` route (git-renamed). `ssoApp: 'trypost'`; `postiz` alias retained.
+
+## 7. Follow-up (still deferred)
+
+1. **Vendor** `trypostit/trypost`, `fazer-ai/mcp-chatwoot`, `fazer-ai/chatwoot-skills` as submodules;
+   **bundle `bun`** into the orchestrator image so the stdio Chatwoot MCP can spawn (else only TryPost
+   HTTP tools are available).
+2. **Live e2e** — `GEMINI_API_KEY` + running TryPost/Chatwoot needed to exercise the agent tool loop
+   (`TEST_PLAN_GENUI_ORCHESTRATOR.md` §E). Build/vet/unit-tests pass; live calls are unverified here.
+3. **Per-tenant scoping** of MCP tool calls (fail closed) — ties into gap G10; enforce before onboarding.
+4. **CI** — add `/v1/mcp/servers` health assertion; repoint paths (restructure Phase 2 / P2).
 
 ## 8. Sources
 - TryPost — <https://github.com/trypostit/trypost> · <https://docs.trypost.it/>

@@ -14,7 +14,7 @@ export const SYSTEMS_TABS = [
   { id: 'erp-orders', name: 'ERPNext', href: '/erp-orders', icon: ShoppingCart, matchPrefix: '/erp-', ssoApp: 'erp-ops' },
   { id: 'support', name: 'Chatwoot', href: '/chatwoot-hub', icon: Headphones, ssoApp: 'chatwoot' },
   { id: 'automations', name: 'Automations', href: '/n8n-workflows', icon: Workflow, ssoApp: 'n8n' },
-  { id: 'marketing', name: 'Postiz', href: '/postiz-social', icon: Share2, ssoApp: 'postiz' },
+  { id: 'marketing', name: 'TryPost', href: '/trypost-social', icon: Share2, ssoApp: 'trypost' },
   { id: 'website', name: 'Website', href: '/website-builder', icon: Globe, ssoApp: 'frappe-builder' },
   { id: 'helpdesk', name: 'Help Desk', href: '/helpdesk', icon: LifeBuoy, ssoApp: 'helpdesk' },
   { id: 'gameball', name: 'Loyalty', href: '/gameball', icon: Gift, ssoApp: 'gameball' },

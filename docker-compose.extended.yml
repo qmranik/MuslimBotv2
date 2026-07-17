@@ -166,8 +166,9 @@ services:
       NEXTCLOUD_URL: "https://files.smb.localhost"
       # Social scheduling = TryPost (MCP-native, replaces Postiz). See docs/architecture/ADR-0001.
       TRYPOST_URL: "https://social.smb.localhost"
-      # TryPost MCP HTTP endpoint the orchestrator ingests (confirm path at docs.trypost.it/self-hosting).
-      TRYPOST_MCP_URL: ${TRYPOST_MCP_URL:-}
+      # TryPost MCP endpoint = <trypost>/mcp/trypost (bearer auth). Internal service URL:
+      TRYPOST_MCP_URL: ${TRYPOST_MCP_URL:-http://trypost/mcp/trypost}
+      TRYPOST_MCP_ENABLED: ${TRYPOST_MCP_ENABLED:-true}
       TRYPOST_API_TOKEN: ${TRYPOST_API_TOKEN:-}
       # Chatwoot agentic layer via fazer-ai/mcp-chatwoot (stdio subprocess; reuses CHATWOOT_URL + CHATWOOT_API_TOKEN).
       CHATWOOT_MCP_ENABLED: ${CHATWOOT_MCP_ENABLED:-true}
@@ -191,11 +192,95 @@ services:
       - platform-net
       - smb-net-local
 
+  # ── Social Scheduling (TryPost — MCP-native, replaces Postiz) ─────
+  # TryPost is a Laravel app (no official image). Vendor the source as a submodule:
+  #   git submodule add https://github.com/trypostit/trypost vendor/trypost
+  # then build. MCP endpoint is served by the app at /mcp/trypost (bearer auth).
+
+  trypost-postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: trypost
+      POSTGRES_USER: ${TRYPOST_DB_USER:-trypost}
+      POSTGRES_PASSWORD: ${TRYPOST_DB_PASSWORD:?TRYPOST_DB_PASSWORD must be set}
+    volumes:
+      - trypost_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TRYPOST_DB_USER:-trypost} -d trypost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-net
+
+  trypost:
+    build:
+      context: ./vendor/trypost
+    image: muslimbot/trypost:local
+    restart: unless-stopped
+    environment: &trypost-env
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_URL: https://social.smb.localhost
+      APP_KEY: ${TRYPOST_APP_KEY:?TRYPOST_APP_KEY must be set (php artisan key:generate)}
+      SELF_HOSTED: "true"
+      DB_CONNECTION: pgsql
+      DB_HOST: trypost-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: trypost
+      DB_USERNAME: ${TRYPOST_DB_USER:-trypost}
+      DB_PASSWORD: ${TRYPOST_DB_PASSWORD:?TRYPOST_DB_PASSWORD must be set}
+      REDIS_HOST: platform-redis
+      REDIS_PORT: "6379"
+      QUEUE_CONNECTION: redis
+    volumes:
+      - trypost_storage:/var/www/html/storage
+    depends_on:
+      trypost-postgres:
+        condition: service_healthy
+      platform-redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.trypost.rule=Host(`social.smb.localhost`)"
+      - "traefik.http.routers.trypost.entrypoints=websecure"
+      - "traefik.http.routers.trypost.tls=true"
+      # ERP-style: MCP/API paths must stay reachable without ForwardAuth (bearer-token clients).
+      - "traefik.http.services.trypost.loadbalancer.server.port=80"
+    networks:
+      - platform-net
+
+  trypost-horizon:
+    image: muslimbot/trypost:local
+    restart: unless-stopped
+    command: ["php", "artisan", "horizon"]
+    environment: *trypost-env
+    depends_on:
+      trypost:
+        condition: service_started
+    networks:
+      - platform-net
+
+  trypost-scheduler:
+    image: muslimbot/trypost:local
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"]
+    environment: *trypost-env
+    depends_on:
+      trypost:
+        condition: service_started
+    networks:
+      - platform-net
+
 volumes:
   platform_pg_data:
   platform_redis_data:
   authentik_media:
   authentik_templates:
+  trypost_pg_data:
+  trypost_storage:
 
 networks:
   platform-net:

@@ -12,13 +12,14 @@ import (
 	"muslimbot-orchestrator/internal/events"
 	"muslimbot-orchestrator/internal/gateway"
 	"muslimbot-orchestrator/internal/knowledge"
+	"muslimbot-orchestrator/internal/mcp"
 	"muslimbot-orchestrator/internal/observability"
 	"muslimbot-orchestrator/internal/portals"
 	"muslimbot-orchestrator/internal/store"
 	"muslimbot-orchestrator/internal/tenants"
+	"muslimbot-orchestrator/internal/voice"
 	"muslimbot-orchestrator/internal/webhooks"
 	"muslimbot-orchestrator/internal/workflows"
-	"muslimbot-orchestrator/internal/voice"
 )
 
 func probe(url string) string {
@@ -79,7 +80,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize proxies: %v", err)
 	}
-	aiRouter := ai.NewRouter(cfg)
+	mcpManager := mcp.NewManager(cfg)
+	mcpHandler := mcp.NewHandler(mcpManager)
+	aiRouter := ai.NewRouter(cfg, mcpManager)
 	aiBrain := ai.NewBrain(cfg)
 	kbHandler := ai.NewKBHandler(cfg)
 	knowledgeHandler := knowledge.NewHandler(cfg)
@@ -131,6 +134,14 @@ func main() {
 			api.POST("/ai/chat", aiRouter.ChatHandler)
 			api.POST("/ai/generate-ui", aiBrain.GenerateUIHandler)
 			api.POST("/ai/tool/execute", aiBrain.ToolExecuteHandler)
+
+			// MCP host — direct tool surface (agent uses these via /ai/chat function-calling).
+			mcpGroup := api.Group("/mcp")
+			{
+				mcpGroup.GET("/servers", mcpHandler.GetServers)
+				mcpGroup.GET("/tools", mcpHandler.GetTools)
+				mcpGroup.POST("/call", mcpHandler.CallTool)
+			}
 
 			api.POST("/workflows/trigger", workflowsHandler.Trigger)
 

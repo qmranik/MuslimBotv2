@@ -8,7 +8,7 @@ const EVENTS = [
   '[02:14:15] Access token dispatched from Go Orchestrator Gateway via secure wildcard cookieflow.',
   '[02:14:32] n8n automation webhook invoked successfully. Sync pattern complete.',
   '[02:14:48] Muslimbot Voice Worker Engine running on LiveKit... Session Secure.',
-  '[02:15:02] SSO connected vectors: n8n, Chatwoot, Postiz, liteERP.',
+  '[02:15:02] SSO connected vectors: n8n, Chatwoot, TryPost, liteERP.',
 ];
 
 export function MuslimBotEcosystem({ onEnterAdmin }) {

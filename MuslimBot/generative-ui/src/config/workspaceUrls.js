@@ -15,7 +15,7 @@ export function getWorkspaceUrl(id) {
     'erp-ops': process.env.NEXT_PUBLIC_WS_ERP_URL || process.env.VITE_WS_ERP_URL,
     automations: process.env.NEXT_PUBLIC_WS_N8N_URL || process.env.VITE_WS_N8N_URL,
     support: process.env.NEXT_PUBLIC_WS_CHATWOOT_URL || process.env.VITE_WS_CHATWOOT_URL,
-    marketing: process.env.NEXT_PUBLIC_WS_POSTIZ_URL || process.env.VITE_WS_POSTIZ_URL,
+    marketing: process.env.NEXT_PUBLIC_WS_TRYPOST_URL || process.env.NEXT_PUBLIC_WS_POSTIZ_URL,
     website: process.env.NEXT_PUBLIC_WS_BUILDER_URL || process.env.VITE_WS_BUILDER_URL,
     helpdesk: process.env.NEXT_PUBLIC_WS_HELPDESK_URL || process.env.VITE_WS_HELPDESK_URL,
     gameball: process.env.NEXT_PUBLIC_WS_GAMEBALL_URL || process.env.VITE_WS_GAMEBALL_URL,

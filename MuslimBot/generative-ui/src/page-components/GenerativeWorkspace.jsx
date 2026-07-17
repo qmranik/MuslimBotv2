@@ -13,7 +13,7 @@ const AGENTS = [
   { id: 'inventory', name: 'Inventory', icon: Package, skills: ['Stock', 'Purchase'], blurb: 'Stock levels, reorder points, purchase orders.' },
   { id: 'orders', name: 'Orders & Sales', icon: ShoppingCart, skills: ['Invoices', 'Payments'], blurb: 'Orders, invoices, receivables, POS.' },
   { id: 'support', name: 'Customer Service', icon: LifeBuoy, skills: ['Chatwoot', 'RAG'], blurb: 'Answers customers from the knowledge base.' },
-  { id: 'copy', name: 'Copywriter', icon: PenLine, skills: ['Postiz', 'Custom models'], blurb: 'Generates marketing copy and schedules posts.' },
+  { id: 'copy', name: 'Copywriter', icon: PenLine, skills: ['TryPost', 'Custom models'], blurb: 'Generates marketing copy and schedules posts.' },
   { id: 'builder', name: 'OpenCode Builder', icon: Terminal, skills: ['Multi-step', 'MCP'], blurb: 'Runs multi-step agentic workflows via MCP tools.' },
 ];
 
@@ -23,16 +23,16 @@ const TOOLS = [
   { id: 'erp', label: 'Query ERPNext', icon: Database, token: '@erp' },
   { id: 'chart', label: 'Generate chart', icon: BarChart3, token: '@chart' },
   { id: 'web', label: 'Fetch website / URL', icon: Globe, token: '@web' },
-  { id: 'postiz', label: 'Check Postiz schedule', icon: PenLine, token: '@postiz' },
+  { id: 'trypost', label: 'Check TryPost schedule', icon: PenLine, token: '@trypost' },
   { id: 'mcp', label: 'Run MCP tool', icon: Terminal, token: '@mcp' },
 ];
 
 const STARTERS = {
-  ops: ['Give me a health snapshot across ERP, Chatwoot and Postiz', 'What needs my attention today?'],
+  ops: ['Give me a health snapshot across ERP, Chatwoot and TryPost', 'What needs my attention today?'],
   inventory: ['Show low-stock items and draft purchase orders', 'Which products sold out this week?'],
   orders: ['List overdue invoices and total receivables', "Summarize today's sales as a chart"],
   support: ['Draft a reply to the latest customer question', 'What are our delivery timeframes?'],
-  copy: ['Draft 3 promo copies for the new product', "What's scheduled in Postiz this week?"],
+  copy: ['Draft 3 promo copies for the new product', "What's scheduled in TryPost this week?"],
   builder: ['Build a dashboard: weekly revenue by product', 'Workflow: low stock → PO → notify supplier'],
 };
 

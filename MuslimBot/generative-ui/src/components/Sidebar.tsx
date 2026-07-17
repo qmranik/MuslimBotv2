@@ -74,7 +74,7 @@ export default function Sidebar() {
               { label: 'liteERP /ops', path: '/lite-erp', icon: <Settings className="w-4 h-4" /> },
               { label: 'n8n Automations', path: '/n8n-workflows', icon: <Zap className="w-4 h-4" /> },
               { label: 'Support Chatwoot', path: '/chatwoot-hub', icon: <MessageSquare className="w-4 h-4" /> },
-              { label: 'Postiz Marketing', path: '/postiz-social', icon: <BarChart2 className="w-4 h-4" /> },
+              { label: 'TryPost Marketing', path: '/trypost-social', icon: <BarChart2 className="w-4 h-4" /> },
             ].map((system) => (
               <Link 
                 key={system.path}

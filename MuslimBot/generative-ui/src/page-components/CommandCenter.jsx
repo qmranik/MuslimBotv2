@@ -111,7 +111,7 @@ export function CommandCenter() {
       setActivityData([
         { title: 'Invoice #4821 paid', subtitle: 'ERPNext · 4m', time: '4m' },
         { title: 'New WhatsApp lead', subtitle: 'Chatwoot · 21m', time: '21m' },
-        { title: 'Postiz scheduled 3 posts', subtitle: 'n8n flow · 1h', time: '1h' }
+        { title: 'TryPost scheduled 3 posts', subtitle: 'n8n flow · 1h', time: '1h' }
       ]);
     } finally {
       setLoading(false);
@@ -135,7 +135,7 @@ export function CommandCenter() {
           Assalamu alaikum, Amina
         </h1>
         <p className="text-base text-slate-500">
-          A live summary across ERPNext, n8n, Chatwoot & Postiz...
+          A live summary across ERPNext, n8n, Chatwoot & TryPost...
         </p>
       </div>
 

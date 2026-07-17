@@ -77,10 +77,10 @@ function buildWorkspaces(): Record<WorkspaceId, WorkspaceConfig> {
     },
     marketing: {
       id: 'marketing',
-      title: 'Postiz Marketing',
+      title: 'TryPost Marketing',
       targetUrl: getWorkspaceUrl('marketing'),
       isExternal: true,
-      ssoApp: 'postiz',
+      ssoApp: 'trypost',
     },
     website: {
       id: 'website',

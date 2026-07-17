@@ -24,7 +24,7 @@ const ROUTE_TO_WORKSPACE_ID = {
   '/knowledge-hub': 'knowledge-hub',
   '/n8n-workflows': 'automations',
   '/chatwoot-hub': 'support',
-  '/postiz-social': 'marketing',
+  '/trypost-social': 'marketing',
   '/website-builder': 'website',
   '/helpdesk': 'helpdesk',
   '/gameball': 'gameball',

@@ -25,7 +25,7 @@ const NATIVE_VIEWS = [
 const EXTERNAL_VIEWS = [
   { id: 'automations', label: 'n8n Automations', icon: Workflow },
   { id: 'support', label: 'Support Chatwoot', icon: Headphones },
-  { id: 'marketing', label: 'Postiz Marketing', icon: Share2 },
+  { id: 'marketing', label: 'TryPost Marketing', icon: Share2 },
   { id: 'files', label: 'Nextcloud Files', icon: FolderOpen },
 ];
 

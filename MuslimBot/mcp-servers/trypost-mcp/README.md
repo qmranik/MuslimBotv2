@@ -10,13 +10,14 @@ Pinterest, Bluesky, Mastodon, Telegram, Discord) with **no hand-written API tool
 Registered in [`../registry.yaml`](../registry.yaml).
 
 ## Transport
-**HTTP** (networked). The orchestrator connects as an HTTP/SSE MCP client to
-`TRYPOST_MCP_URL`, authenticating with `TRYPOST_API_TOKEN` (bearer).
+**HTTP** (Streamable HTTP). The orchestrator connects as an MCP client to
+`TRYPOST_MCP_URL` = `<trypost-host>/mcp/trypost`, authenticating with
+`Authorization: Bearer <TRYPOST_API_TOKEN>` (API key from **Settings → API Keys**).
+Inside the platform network this is `http://trypost/mcp/trypost`.
 
-> The exact MCP endpoint path and auth header are **to be confirmed** from
-> <https://docs.trypost.it/self-hosting/overview>. Do not hardcode a guessed path;
-> `TRYPOST_MCP_URL` is empty by default and the client must fail loud when enabled
-> without it.
+> Source: <https://docs.trypost.it/ai/introduction> (OAuth 2.1 is the primary auth;
+> bearer token is the server-to-server fallback we use). Self-hosted MCP requires the
+> app deployed (see `docker-compose.extended.yml`).
 
 ## Configuration (env only)
 | Var | Purpose |

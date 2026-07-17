@@ -112,7 +112,7 @@ export function MuslimBotCanvas() {
             {
               id: Date.now().toString(),
               type: "assistant",
-              content: `Canvas updated based on: ${text}. Try mentioning systems like 'ERPNext', 'Chatwoot', 'n8n', 'Postiz', 'Gameball', or 'Files'.`,
+              content: `Canvas updated based on: ${text}. Try mentioning systems like 'ERPNext', 'Chatwoot', 'n8n', 'TryPost', 'Gameball', or 'Files'.`,
               timestamp: Date.now(),
             }
           ]);
