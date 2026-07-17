@@ -1,0 +1,3 @@
+[submodule "vendor/trypost"]
+	path = vendor/trypost
+	url = https://github.com/trypostit/trypost

@@ -63,6 +63,9 @@ if [ ! -f "/opt/muslimbot/secrets/muslimbot.env" ]; then
   sed -i "s/^CHATWOOT_DB_PASSWORD=.*/CHATWOOT_DB_PASSWORD=$(openssl rand -hex 24)/" .env
   sed -i "s/^CHATWOOT_SECRET_KEY=.*/CHATWOOT_SECRET_KEY=$(openssl rand -hex 64)/" .env
   sed -i "s/^KB_BFF_API_KEY=.*/KB_BFF_API_KEY=$(openssl rand -hex 32)/" .env
+  sed -i "s/^AUTHENTIK_SECRET_KEY=.*/AUTHENTIK_SECRET_KEY=$(openssl rand -hex 64)/" .env
+  sed -i "s/^TRYPOST_DB_PASSWORD=.*/TRYPOST_DB_PASSWORD=$(openssl rand -hex 24)/" .env
+  sed -i "s/^TRYPOST_APP_KEY=.*/TRYPOST_APP_KEY=base64:$(openssl rand -base64 32)/" .env
   
   # Determine public IP and set URLs
   PUBLIC_IP=$(curl -s ifconfig.me || curl -s ifconfig.co)
@@ -100,6 +103,11 @@ sleep 20
 echo "==> Initializing ERPNext and Chatwoot (install-demo.sh)..."
 export COMPOSE_PROFILES=support,voice
 bash small_erp/scripts/install-demo.sh
+
+echo "==> Starting Edge Stack (Traefik, Authentik, Orchestrator, TryPost)..."
+cd /opt/muslimbot/repo
+docker compose -f docker-compose.extended.yml build
+docker compose -f docker-compose.extended.yml up -d
 
 echo ""
 echo "=========================================================="

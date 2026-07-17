@@ -150,7 +150,7 @@ services:
 
   go-orchestrator:
     build:
-      context: ./go-orchestrator
+      context: ./MuslimBot/go-orchestrator
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
@@ -287,4 +287,4 @@ networks:
     driver: bridge
   smb-net-local:
     external: true
-    name: liteerp_smb-net-local
+    name: liteerp_smb-net
