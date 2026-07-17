@@ -111,8 +111,8 @@ bash small_erp/scripts/install-demo.sh
 
 echo "==> Starting Edge Stack (Traefik, Authentik, Orchestrator, TryPost)..."
 cd /opt/muslimbot/repo
-docker compose -f docker-compose.extended.yml build
-docker compose -f docker-compose.extended.yml up -d
+docker compose -f docker-compose.extended.yml --env-file /opt/muslimbot/secrets/muslimbot.env build
+docker compose -f docker-compose.extended.yml --env-file /opt/muslimbot/secrets/muslimbot.env up -d
 
 echo ""
 echo "=========================================================="
