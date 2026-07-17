@@ -32,8 +32,18 @@ type Config struct {
 	ChatwootPlatformToken string
 
 	NextcloudURL    string
-	PostizURL       string
 	FrappePublicURL string
+
+	// Social scheduling = TryPost (MCP-native, replaces Postiz).
+	// TryPostURL is the embeddable portal URL; the MCP/REST surface is what the
+	// orchestrator ingests so GenUI can draft/schedule/read analytics agentically.
+	TryPostURL      string
+	TryPostMCPURL   string
+	TryPostAPIToken string
+
+	// Chatwoot agentic layer = fazer-ai/mcp-chatwoot (stdio, spawned as a subprocess).
+	// It reuses ChatwootURL + ChatwootAPIToken (CHATWOOT_BASE_URL / CHATWOOT_API_TOKEN).
+	ChatwootMCPEnabled bool
 
 	AuthentikInternalURL string
 
@@ -79,8 +89,14 @@ func LoadConfig() *Config {
 		ChatwootPlatformToken: firstEnv("CHATWOOT_PLATFORM_TOKEN", "CHATWOOT_API_TOKEN"),
 
 		NextcloudURL:    envOr("NEXTCLOUD_URL", "https://files.smb.localhost"),
-		PostizURL:       envOr("POSTIZ_URL", "https://social.smb.localhost"),
 		FrappePublicURL: envOr("FRAPPE_PUBLIC_URL", "https://erp.smb.localhost"),
+
+		// TRYPOST_URL supersedes POSTIZ_URL (kept as a deprecated fallback).
+		TryPostURL:      envOr("TRYPOST_URL", envOr("POSTIZ_URL", "https://social.smb.localhost")),
+		TryPostMCPURL:   os.Getenv("TRYPOST_MCP_URL"),
+		TryPostAPIToken: os.Getenv("TRYPOST_API_TOKEN"),
+
+		ChatwootMCPEnabled: envOr("CHATWOOT_MCP_ENABLED", "false") == "true",
 
 		AuthentikInternalURL: envOr("AUTHENTIK_INTERNAL_URL", "http://authentik-server:9000"),
 

@@ -34,7 +34,7 @@ The gap between blueprint and reality is therefore **not §4 or §6 (the interes
 | Frappe / small_erp | System of record; seed_demo; API-token automation | **Partial** — no backup, OIDC not codified |
 | Terraform | Secret Manager, random_password, network, compute | **Partial** — not wired to compose `.env` |
 | CI | 6 jobs + gitleaks | **No** — paths break on move; lint advisory only |
-| Nextcloud / Postiz | Portal handlers ready; **no services, no MCP server** | **No** |
+| Nextcloud / Social (TryPost) | Portal handlers ready; social swapped to **TryPost** (MCP-native, replaces Postiz) + Chatwoot MCP scaffolded (ADR-0001); services + MCP host runtime pending | **No** |
 | Backups / DR | **Nonexistent** | **No** |
 | Observability | RequestLogger only | **No** — no metrics, traces, or alerts |
 
@@ -76,7 +76,8 @@ Carried forward from `IMPLEMENTATION_PLAN.md` (G1–G13), extended with producti
 |---|-----|
 | **G12** | ERPNext ↔ Authentik OIDC Social Login Key (§2.1/§2.2) not codified — prose only |
 | **G9** | Nextcloud not deployed; **no Nextcloud MCP server** (`mcp-servers/` has only `frappe-docs-mcp`, `bench-mcp`) |
-| **G11** | Postiz not deployed (~6 GB with Temporal/Elasticsearch) |
+| **G11** | Social = **TryPost** (MCP-native), replacing Postiz — decision recorded in `docs/architecture/ADR-0001`. Backend/config swapped; TryPost deploy + MCP host runtime deferred (ADR §7). Drops the ~6 GB Temporal/Elasticsearch footprint. |
+| **G14** | Chatwoot agentic layer = **fazer-ai/mcp-chatwoot** (129 tools, stdio) + `chatwoot-skills` SOPs — scaffolded in `mcp-servers/`, ADR-0001. Enhances Workflow 2 (G9/support-RAG). MCP host runtime deferred. |
 | **G13** | Frappe Builder public website (§3.2) unimplemented |
 | **P9** | Duplicate/conflicting Flutter CI (`ci.yml` `mobile` job + `flutter_ci.yml`) |
 | **P10** | Lint not enforced — `ruff check small_erp \|\| true` |
@@ -137,11 +138,12 @@ This phase does not exist in the original plan and is the single largest product
 2. Reduce `SetValidFor(2h)` to session lifetime.
 3. Rewrite blueprint §5 / §7-Phase-5 to LiveKit + Gemini Realtime + Twilio SIP (G8). Keep Twilio for PSTN ingress only.
 
-### Phase F — Workflows 2 & 3, Knowledge (G9, G11)
+### Phase F — Workflows 2 & 3, Knowledge, MCP host (G9, G11, G14)
 
-1. **Workflow 2**: auto-import `configs/n8n/workflow-chatwoot-support-vertex.json`; drive via signature-gated `POST /v1/webhooks/chatwoot`; loop guard → RAG → reply or human handoff.
+1. **Workflow 2**: auto-import `configs/n8n/workflow-chatwoot-support-vertex.json`; drive via signature-gated `POST /v1/webhooks/chatwoot`; loop guard → RAG → reply or human handoff. Consider `fazer-ai/n8n-nodes-chatwoot` for typed Chatwoot nodes.
 2. **Knowledge**: deploy Nextcloud (OIDC via Authentik); **build the missing Nextcloud MCP server**; activate `workflow-nextcloud-kb-ingest.json`.
-3. **Workflow 3 / Postiz** (G11): gated on the owner's footprint decision.
+3. **MCP host runtime** (G11, G14): implement `internal/mcp/` in the orchestrator — HTTP client for **TryPost** MCP, stdio subprocess for **fazer-ai/mcp-chatwoot** (129 tools), tool republish to the router with per-tenant scoping. Vendor `mcp-chatwoot` + `chatwoot-skills`. See `docs/architecture/ADR-0001`.
+4. **Workflow 3 / TryPost** (G11): deploy TryPost from upstream self-host compose; social scheduling now agentic via MCP (no custom wrappers).
 
 ### Phase G — Flutter (§4.2) & Frappe Builder (G13)
 
@@ -183,7 +185,7 @@ A blocks everything. **B before any feature work** — an unbacked system of rec
 | 1 | **Run the `chown`** to fix root ownership | A — everything |
 | 2 | **Production domain + DNS control** (for ACME) | C |
 | 3 | **Real production target.** `docker-compose.yml` budgets ~7.5 GB core on 16 GB and excludes the edge tier to save ~6 GB. The full blueprint does not fit. Bigger host, or split nodes? | C |
-| 4 | **Postiz in scope?** ~6 GB with Temporal + Elasticsearch | F |
+| 4 | **TryPost host sizing** (replaces Postiz; Laravel multi-container, far lighter than Postiz's ~6 GB Temporal+ES stack) — deploy now or defer? | F |
 | 5 | **Confirm LiveKit + Gemini Realtime final** so §5 is rewritten, not the code | E |
 | 6 | **Backup retention/RPO/RTO targets** | B |
 

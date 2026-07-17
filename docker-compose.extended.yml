@@ -164,7 +164,13 @@ services:
       CHATWOOT_URL: "http://chatwoot:3000"
       CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
       NEXTCLOUD_URL: "https://files.smb.localhost"
-      POSTIZ_URL: "https://social.smb.localhost"
+      # Social scheduling = TryPost (MCP-native, replaces Postiz). See docs/architecture/ADR-0001.
+      TRYPOST_URL: "https://social.smb.localhost"
+      # TryPost MCP HTTP endpoint the orchestrator ingests (confirm path at docs.trypost.it/self-hosting).
+      TRYPOST_MCP_URL: ${TRYPOST_MCP_URL:-}
+      TRYPOST_API_TOKEN: ${TRYPOST_API_TOKEN:-}
+      # Chatwoot agentic layer via fazer-ai/mcp-chatwoot (stdio subprocess; reuses CHATWOOT_URL + CHATWOOT_API_TOKEN).
+      CHATWOOT_MCP_ENABLED: ${CHATWOOT_MCP_ENABLED:-true}
       AUTHENTIK_INTERNAL_URL: "http://authentik-server:9000"
       GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
       GCP_LOCATION: ${GCP_LOCATION:-}

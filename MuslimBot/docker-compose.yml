@@ -10,9 +10,10 @@
 #   ✅ Chatwoot (optional, --profile support)
 #
 # Excluded (saves ~6 GB RAM):
-#   ❌ Postiz (social scheduling — not core to demo)
-#   ❌ Temporal + Elasticsearch (Postiz dependency)
+#   ❌ TryPost (social scheduling — MCP-native, replaces Postiz; not core to demo)
 #   ❌ Authentik / Traefik / Go Orchestrator (platform edge)
+#   NOTE: social = TryPost (trypostit/trypost); Chatwoot agentic layer =
+#   fazer-ai/mcp-chatwoot (stdio). See docs/architecture/ADR-0001.
 #
 # Memory budget:
 #   Core (always on):   ~7.5 GB
@@ -103,7 +104,7 @@ services:
         limits:
           memory: 1024M
 
-  # ─── Shared Postgres (Chatwoot only — no Postiz/Temporal) ─────────────
+  # ─── Shared Postgres (Chatwoot only) ─────────────────────────────────
   postgres-shared:
     image: pgvector/pgvector:pg16
     container_name: gcp-postgres-shared

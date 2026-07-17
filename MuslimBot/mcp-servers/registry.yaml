@@ -1,0 +1,44 @@
+# MCP server registry — the agentic tool surface the go-orchestrator ingests.
+#
+# The orchestrator acts as an MCP *host*: it connects to each enabled server and
+# republishes their tools to the GenUI AI (internal/ai/router.go). This removes the
+# need to hand-write REST tool wrappers per integration.
+#
+# Transports:
+#   - http  : networked MCP server; orchestrator connects as an HTTP/SSE MCP client.
+#   - stdio : local process; orchestrator (or an MCP gateway sidecar) spawns it and
+#             speaks MCP over stdin/stdout. NOT a compose port-service.
+#
+# Secrets come from environment only (no literals here). Servers with a required
+# secret unset MUST fail loud at startup, never fall back to a default.
+
+servers:
+  - name: trypost
+    description: >-
+      Social scheduling (TryPost, trypostit/trypost). Draft, schedule, publish and
+      read analytics across 12 networks via natural language. Replaces Postiz.
+    enabled_env: TRYPOST_MCP_ENABLED      # default false until endpoint confirmed
+    transport: http
+    endpoint_env: TRYPOST_MCP_URL         # e.g. http://trypost:<port>/mcp (confirm upstream)
+    auth:
+      type: bearer
+      token_env: TRYPOST_API_TOKEN        # required when enabled; fail loud if empty
+    docs: https://docs.trypost.it/self-hosting/overview
+
+  - name: chatwoot
+    description: >-
+      Chatwoot agentic layer (fazer-ai/mcp-chatwoot, TypeScript + Bun, 129 tools):
+      conversation lifecycle, admin/config (inboxes, teams, agents, webhooks),
+      reporting/analytics, contacts/CRM, and Help Center / KB.
+    enabled_env: CHATWOOT_MCP_ENABLED
+    transport: stdio
+    command: ["bun", "run", "start"]      # see mcp-servers/chatwoot-mcp/README.md
+    cwd: vendor/mcp-chatwoot               # git submodule / vendored @fazer-ai/mcp-chatwoot
+    auth:
+      # Reuses the existing Chatwoot credentials — no new secret.
+      env:
+        CHATWOOT_BASE_URL: CHATWOOT_URL
+        CHATWOOT_API_TOKEN: CHATWOOT_API_TOKEN
+    skills: fazer-ai/chatwoot-skills       # SKILL.md SOPs teaching the 129 tools
+    npm: "@fazer-ai/mcp-chatwoot"
+    repo: https://github.com/fazer-ai/mcp-chatwoot

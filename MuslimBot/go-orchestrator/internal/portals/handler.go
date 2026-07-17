@@ -55,8 +55,8 @@ func (h *Handler) GetPortalURL(c *gin.Context) {
 		portalURL = ssoURL
 		authMechanism = "magic_link"
 
-	case "postiz":
-		portalURL = h.config.PostizURL
+	case "trypost", "postiz": // "postiz" retained as a deprecated alias
+		portalURL = h.config.TryPostURL
 		authMechanism = "oidc"
 
 	default:
