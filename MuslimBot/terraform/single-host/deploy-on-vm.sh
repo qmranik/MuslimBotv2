@@ -10,9 +10,9 @@ sudo mkdir -p /opt/muslimbot/backups
 sudo mkdir -p /opt/muslimbot/data/docker
 sudo mkdir -p /opt/muslimbot/secrets
 
-sudo chown -R "$USER:$USER" /opt/muslimbot/repo /opt/muslimbot/backups /opt/muslimbot/data
-sudo chown "$USER:$USER" /opt/muslimbot/secrets
-sudo chmod 0700 /opt/muslimbot/secrets
+sudo install -d -o "$USER" -g "$USER" /opt/muslimbot/repo
+sudo install -d -o "$USER" -g "$USER" /opt/muslimbot/backups
+sudo install -d -m 0700 -o "$USER" -g "$USER" /opt/muslimbot/secrets
 
 echo "==> Configuring Docker to use data disk..."
 if ! sudo grep -q '"data-root": "/opt/muslimbot/data/docker"' /etc/docker/daemon.json 2>/dev/null; then
