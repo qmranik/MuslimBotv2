@@ -1,5 +1,14 @@
 {
   "mcpServers": {
+    "neon": {
+      "url": "https://mcp.neon.tech/mcp"
+    },
+    "neon-local": {
+      "command": "${workspaceFolder}/scripts/mcp/run-neon-mcp.sh"
+    },
+    "upstash": {
+      "command": "${workspaceFolder}/scripts/mcp/run-upstash-mcp.sh"
+    },
     "frappe-dev": {
       "command": "node",
       "args": ["${workspaceFolder}/mcp-servers/frappe-dev-mcp/src/index.js"],
@@ -20,11 +29,7 @@
       }
     },
     "postgres-mcp": {
-      "command": "node",
-      "args": ["${workspaceFolder}/mcp-servers/postgres-mcp/postgres-mcp.js"],
-      "env": {
-        "DATABASE_URL": "${env:DATABASE_URL}"
-      }
+      "command": "${workspaceFolder}/scripts/mcp/run-postgres-mcp.sh"
     },
     "codebase-mcp": {
       "command": "node",

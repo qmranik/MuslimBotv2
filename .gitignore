@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.template
+!.env.mvt.cloud.template
 **/.env
 **/.env.local
 generative-ui/.env
@@ -53,6 +54,19 @@ audit-screenshots/
 qa_evidence/
 output/
 
+# ─── Terraform ───────────────────────────────────────────────────────
+**/.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
 # ─── Editor / OS / tooling ───────────────────────────────────────────
 .DS_Store
 .idea/
@@ -65,3 +79,6 @@ open-computer-use/
 .ironbee/config.local.json
 .ironbee/codex-threads.json
 .claude/settings.local.json
+
+# Cursor MCP local secrets
+.cursor/mcp.secrets.env

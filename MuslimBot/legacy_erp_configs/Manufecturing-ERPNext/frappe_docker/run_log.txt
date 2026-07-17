@@ -1,0 +1,11 @@
+Initializing site antigravity.localhost...
+Cleaning up previous seed data...
+User connect.qmr@gmail.com password updated.
+Company defaults updated.
+Warehouse accounts mapped and cache cleared.
+Operations configured.
+Item valuation rates updated.
+Initial stock receipt created and submitted.
+Simulating 2 years of transactions...
+[2026-07-03] Work Order MFG-WO-2026-00050 created and left in progress.
+Full System Seeding with 2 years of realistic transactional history completed successfully!
