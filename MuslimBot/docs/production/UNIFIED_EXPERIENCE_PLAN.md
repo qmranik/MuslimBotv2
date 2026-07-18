@@ -63,8 +63,13 @@ cd /opt/muslimbot/repo/MuslimBot
 docker compose --env-file /opt/muslimbot/secrets/muslimbot.env \
   -f docker-compose.yml -f ../docker-compose.extended.yml up -d go-orchestrator authentik-server traefik
 ```
-**Verify:** `curl -sk https://api.$IP.nip.io/v1/sys/health` → JSON; `https://auth.$IP.nip.io/` → Authentik.
-Until this passes, nothing below can unify.
+**Status (applied + verified live 2026-07-18):** ✅ both label fixes applied on the VM and pushed to git.
+`auth.` now returns **302 → Authentik login** (SSO backbone online); the orchestrator router now loads
+with `authentik-forwardauth@file` attached. `api.` still returns **404 — expected**: its ForwardAuth
+calls `authentik-server:9000/outpost.goauthentik.io/auth/traefik`, which currently 404s because
+**Authentik has no outpost/provider configured yet**. That is the very next step (U1) and is web-UI
+gated. Once the embedded outpost exists, `api.` serves (redirect-to-login for humans; pass for
+authenticated/token clients).
 
 ## U1 — One sign-on across every system
 
