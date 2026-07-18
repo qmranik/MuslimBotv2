@@ -110,9 +110,9 @@ export COMPOSE_PROFILES=support,voice
 bash small_erp/scripts/install-demo.sh
 
 echo "==> Starting Edge Stack (Traefik, Authentik, Orchestrator, TryPost)..."
-cd /opt/muslimbot/repo
-docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f MuslimBot/docker-compose.yml -f docker-compose.extended.yml --profile support --profile voice build
-docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f MuslimBot/docker-compose.yml -f docker-compose.extended.yml --profile support --profile voice up -d
+cd /opt/muslimbot/repo/MuslimBot
+docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f docker-compose.yml -f ../docker-compose.extended.yml --profile support --profile voice build
+docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f docker-compose.yml -f ../docker-compose.extended.yml --profile support --profile voice up -d
 
 echo ""
 echo "=========================================================="

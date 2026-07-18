@@ -150,7 +150,7 @@ services:
 
   go-orchestrator:
     build:
-      context: ./MuslimBot/go-orchestrator
+      context: ./go-orchestrator
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
@@ -216,7 +216,7 @@ services:
 
   trypost:
     build:
-      context: ./vendor/trypost
+      context: ../vendor/trypost
     image: muslimbot/trypost:local
     restart: unless-stopped
     environment: &trypost-env
