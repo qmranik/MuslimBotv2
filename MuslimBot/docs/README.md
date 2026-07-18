@@ -67,6 +67,6 @@ generative-ui · voice/KB · Chatwoot · TryPost · n8n), deployed as a single-h
 - [`../README.md`](../README.md) — project overview & quick start
 - [`../CLAUDE.md`](../CLAUDE.md) — repo guide for AI tooling
 - [`../scripts/README.md`](../scripts/README.md) — scripts catalog
-- [`../COMPOSE.md`](../COMPOSE.md) — Compose files, ports, profiles
+- [`../COMPOSE.md`](../../COMPOSE.md) — Compose files, ports, profiles
 - [`../terraform/README.md`](../terraform/README.md) — infrastructure modules
 - MCP servers: [`../mcp-servers/`](../mcp-servers/) (trypost-mcp, chatwoot-mcp, bench-mcp, frappe-docs-mcp)

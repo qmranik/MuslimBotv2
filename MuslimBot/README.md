@@ -69,7 +69,7 @@ docker compose -f docker-compose.local.yml --profile voice up -d
 
 For a GCP demo VM with baked image, Postiz, Chatwoot, and nginx-served generative-ui:
 
-See [wayToDemo.md](wayToDemo.md) for full VM prep, prerequisites, and demo script.
+See [wayToDemo.md](docs/business/wayToDemo.md) for full VM prep, prerequisites, and demo script.
 
 ```bash
 cp .env.template .env
