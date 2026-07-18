@@ -14,21 +14,34 @@ sudo install -d -o "$USER" -g "$USER" /opt/muslimbot/repo
 sudo install -d -o "$USER" -g "$USER" /opt/muslimbot/backups
 sudo install -d -m 0700 -o "$USER" -g "$USER" /opt/muslimbot/secrets
 
-echo "==> Configuring Docker to use data disk..."
+echo "==> Configuring Docker Daemon to use SSD..."
 if ! sudo grep -q '"data-root": "/opt/muslimbot/data/docker"' /etc/docker/daemon.json 2>/dev/null; then
-  sudo systemctl stop docker docker.socket || true
+  sudo systemctl stop docker docker.socket containerd || true
+  
+  # Configure Docker data-root
   sudo mkdir -p /etc/docker
   sudo tee /etc/docker/daemon.json >/dev/null <<'EOF'
 {
   "data-root": "/opt/muslimbot/data/docker",
   "log-driver": "json-file",
   "log-opts": {
-    "max-size": "20m",
-    "max-file": "5"
+    "max-size": "10m",
+    "max-file": "3"
   }
 }
 EOF
-  sudo systemctl start docker
+
+  # Move containerd to SSD (where it stores 20GB+ of image blobs)
+  if [ ! -L /var/lib/containerd ]; then
+    sudo mkdir -p /opt/muslimbot/data/containerd
+    if [ -d /var/lib/containerd ]; then
+      sudo cp -a /var/lib/containerd/* /opt/muslimbot/data/containerd/ 2>/dev/null || true
+      sudo rm -rf /var/lib/containerd
+    fi
+    sudo ln -s /opt/muslimbot/data/containerd /var/lib/containerd
+  fi
+
+  sudo systemctl start containerd docker
   docker info --format 'Docker root: {{.DockerRootDir}}'
 else
   echo "Docker data-root is already configured."
