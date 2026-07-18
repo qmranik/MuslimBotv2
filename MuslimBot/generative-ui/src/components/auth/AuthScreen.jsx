@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ShieldCheck, LogIn, UserPlus, ArrowRight } from 'lucide-react';
 import { getLoginUrl, getSignupUrl, authConfigured } from '../../config/auth';
@@ -30,6 +31,13 @@ const COPY = {
 export function AuthScreen({ mode = 'login' }) {
   const c = COPY[mode] || COPY.login;
   const Icon = c.icon;
+
+  // Compute the SSO URL client-side: it reads window.location for the return
+  // path, so deriving it during render would cause a hydration mismatch.
+  const [ssoUrl, setSsoUrl] = useState('#');
+  useEffect(() => {
+    setSsoUrl(c.getUrl());
+  }, [c]);
 
   return (
     <div
@@ -74,7 +82,7 @@ export function AuthScreen({ mode = 'login' }) {
 
         {/* Primary SSO action */}
         <a
-          href={c.getUrl()}
+          href={ssoUrl}
           className="group flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-white transition-transform active:scale-[0.99]"
           style={{ background: 'var(--accent-primary)' }}
         >

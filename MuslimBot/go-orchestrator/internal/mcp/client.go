@@ -113,18 +113,24 @@ func readRPCPayload(resp *http.Response) ([]byte, error) {
 // ── stdio transport (subprocess) ────────────────────────────────────────────
 
 type stdioTransport struct {
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	pending map[int]chan jsonRPCResponse
-	mu      sync.Mutex
-	writeMu sync.Mutex
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	pending  map[int]chan jsonRPCResponse
+	mu       sync.Mutex
+	writeMu  sync.Mutex
+	closed   bool
+	closeErr error
+	done     chan struct{} // closed when the subprocess dies or the transport is closed
 }
 
-func newStdioTransport(ctx context.Context, command []string, cwd string, env []string) (*stdioTransport, error) {
+// newStdioTransport spawns the MCP server subprocess. The process is intentionally
+// NOT tied to any request context — it outlives individual requests until the
+// transport is closed or the process exits.
+func newStdioTransport(command []string, cwd string, env []string) (*stdioTransport, error) {
 	if len(command) == 0 {
 		return nil, fmt.Errorf("stdio transport: empty command")
 	}
-	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
+	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = cwd
 	cmd.Env = env
 	stdin, err := cmd.StdinPipe()
@@ -138,9 +144,36 @@ func newStdioTransport(ctx context.Context, command []string, cwd string, env []
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	t := &stdioTransport{cmd: cmd, stdin: stdin, pending: make(map[int]chan jsonRPCResponse)}
+	t := &stdioTransport{
+		cmd:     cmd,
+		stdin:   stdin,
+		pending: make(map[int]chan jsonRPCResponse),
+		done:    make(chan struct{}),
+	}
 	go t.readLoop(stdout)
+	// Watch for process exit so pending waiters fail fast instead of hanging
+	// until their context deadline.
+	go func() {
+		werr := cmd.Wait()
+		if werr == nil {
+			werr = fmt.Errorf("mcp stdio process exited")
+		}
+		t.fail(fmt.Errorf("mcp stdio: %w", werr))
+	}()
 	return t, nil
+}
+
+// fail marks the transport dead and unblocks every waiter via done. Idempotent.
+func (t *stdioTransport) fail(err error) {
+	t.mu.Lock()
+	if t.closed {
+		t.mu.Unlock()
+		return
+	}
+	t.closed = true
+	t.closeErr = err
+	close(t.done)
+	t.mu.Unlock()
 }
 
 func (t *stdioTransport) readLoop(stdout io.Reader) {
@@ -160,7 +193,7 @@ func (t *stdioTransport) readLoop(stdout io.Reader) {
 		delete(t.pending, *resp.ID)
 		t.mu.Unlock()
 		if ok {
-			ch <- resp
+			ch <- resp // ch is buffered (cap 1); never blocks, never panics
 		}
 	}
 }
@@ -170,6 +203,15 @@ func (t *stdioTransport) send(ctx context.Context, req jsonRPCRequest) (json.Raw
 	if err != nil {
 		return nil, err
 	}
+
+	t.mu.Lock()
+	if t.closed {
+		err := t.closeErr
+		t.mu.Unlock()
+		return nil, err
+	}
+	t.mu.Unlock()
+
 	if req.ID == nil { // notification
 		t.writeMu.Lock()
 		defer t.writeMu.Unlock()
@@ -179,6 +221,11 @@ func (t *stdioTransport) send(ctx context.Context, req jsonRPCRequest) (json.Raw
 
 	ch := make(chan jsonRPCResponse, 1)
 	t.mu.Lock()
+	if t.closed {
+		err := t.closeErr
+		t.mu.Unlock()
+		return nil, err
+	}
 	t.pending[*req.ID] = ch
 	t.mu.Unlock()
 
@@ -192,6 +239,8 @@ func (t *stdioTransport) send(ctx context.Context, req jsonRPCRequest) (json.Raw
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case <-t.done:
+		return nil, t.closeErr
 	case resp := <-ch:
 		if resp.Error != nil {
 			return nil, fmt.Errorf("mcp rpc error %d: %s", resp.Error.Code, resp.Error.Message)
@@ -205,6 +254,7 @@ func (t *stdioTransport) close() error {
 	if t.cmd.Process != nil {
 		_ = t.cmd.Process.Kill()
 	}
+	t.fail(fmt.Errorf("mcp stdio transport closed"))
 	return nil
 }
 
