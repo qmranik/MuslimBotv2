@@ -217,6 +217,7 @@ services:
   trypost:
     build:
       context: ../vendor/trypost
+      dockerfile: docker/Dockerfile
     image: muslimbot/trypost:local
     restart: unless-stopped
     environment: &trypost-env
