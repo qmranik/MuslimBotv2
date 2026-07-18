@@ -22,7 +22,7 @@
         "headerParameters": {
           "parameters": [
             { "name": "Content-Type", "value": "application/json" },
-            { "name": "X-KB-API-Key", "value": "={{ $env.KBBFF_API_KEY || $env.KB_BFF_API_KEY }}" },
+            { "name": "X-Service-API-Key", "value": "={{ $env.ORCHESTRATOR_SERVICE_API_KEY || $env.KBBFF_API_KEY || $env.KB_BFF_API_KEY }}" },
             { "name": "X-Tenant-Id", "value": "={{ $json.body?.tenant || $json.tenant || 'default' }}" }
           ]
         },

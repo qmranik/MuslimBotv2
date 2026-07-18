@@ -64,7 +64,7 @@ case "${1:-help}" in
     echo "     Small ERP:      http://${IP}:8000/ops"
     echo "     Generative UI:  http://${IP}:5173"
     echo "     n8n:            http://${IP}:5678"
-    echo "     KB BFF:         http://${IP}:8787/health"
+    echo "     Go orchestrator:  http://${IP}:8080/v1/sys/health
     ;;
 
   stop)
@@ -137,7 +137,7 @@ case "${1:-help}" in
     echo "  Small ERP (/ops):  http://${IP}:8000/ops"
     echo "  Generative UI:     http://${IP}:5173"
     echo "  n8n Automation:    http://${IP}:5678"
-    echo "  KB BFF Health:     http://${IP}:8787/health"
+    echo "  Go health:        http://${IP}:8080/v1/sys/health
     echo "  Chatwoot:          http://${IP}:3000"
     echo ""
     echo "  Login: Administrator / <ADMIN_PASSWORD from .env>"

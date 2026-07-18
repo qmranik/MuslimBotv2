@@ -37,6 +37,11 @@ const (
 	routeUnsupported                  // needs a surface not available here (calendar, desk submit)
 )
 
+// IsUnsupported reports whether the tool cannot be executed on this surface.
+func (s ToolSpec) IsUnsupported() bool {
+	return s.Route == routeUnsupported
+}
+
 // Catalog is the canonical registry keyed by tool name.
 var Catalog = map[string]ToolSpec{
 	// ── Reads ────────────────────────────────────────────────────────────

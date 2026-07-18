@@ -151,13 +151,15 @@ func TestAuthentikMiddleware_HonoursHeadersFromTrustedPeer(t *testing.T) {
 	}
 }
 
-// G10: resolveTenant precedence + fail-open only when no platform DB exists.
+// G10: resolveTenant precedence — email mapping preferred when DB exists;
+// X-Tenant-Id is never trusted alone. With nil DB, host slug or default.
 func TestResolveTenant(t *testing.T) {
 	if tid, ok := resolveTenant("acme", "", "x@y.z"); !ok || tid != "acme" {
-		t.Fatalf("host slug should win: got %q ok=%v", tid, ok)
+		t.Fatalf("host slug should win without DB: got %q ok=%v", tid, ok)
 	}
-	if tid, ok := resolveTenant("", "beta", "x@y.z"); !ok || tid != "beta" {
-		t.Fatalf("header should win when no host slug: got %q ok=%v", tid, ok)
+	// X-Tenant-Id alone is ignored when no platform DB / host slug exists.
+	if tid, ok := resolveTenant("", "beta", "x@y.z"); !ok || tid != "default" {
+		t.Fatalf("header alone must not select tenant without DB: got %q ok=%v", tid, ok)
 	}
 	// store.DB is nil in unit tests → single-tenant default is allowed.
 	if tid, ok := resolveTenant("", "", "x@y.z"); !ok || tid != "default" {

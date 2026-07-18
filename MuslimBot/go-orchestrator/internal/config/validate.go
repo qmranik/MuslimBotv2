@@ -37,12 +37,20 @@ func (c *Config) MustValidate() error {
 
 	// Placeholder secrets must be overridden (G6/P5).
 	for name, val := range map[string]string{
-		"KBBFF_API_KEY":  c.KBBffAPIKey,
-		"WEBHOOK_SECRET": c.WebhookSecret,
+		"ORCHESTRATOR_SERVICE_API_KEY": c.OrchestratorServiceAPIKey,
+		"WEBHOOK_SECRET":               c.WebhookSecret,
 	} {
 		if insecureDefaults[strings.ToLower(strings.TrimSpace(val))] {
 			problems = append(problems, fmt.Sprintf("%s is unset or a known placeholder — set a real secret", name))
 		}
+	}
+
+	// ADR-0002: never allow unfiltered shared-corpus retrieval in production.
+	if c.RagAllowUnfiltered {
+		problems = append(problems, "RAG_ALLOW_UNFILTERED=true is forbidden in production (tenant isolation)")
+	}
+	if c.RagTenancyMode != "" && c.RagTenancyMode != "shared_metadata" {
+		problems = append(problems, fmt.Sprintf("unsupported RAG_TENANCY_MODE=%q (expected shared_metadata)", c.RagTenancyMode))
 	}
 
 	if len(problems) > 0 {

@@ -50,7 +50,7 @@ x-frappe-common: &frappe-common
     - smb-net
 
 x-chatwoot-common: &chatwoot-common
-  image: chatwoot/chatwoot:v3.10.1
+  image: chatwoot/chatwoot:latest
   restart: unless-stopped
   env_file: .env
   environment: &chatwoot-env
@@ -68,6 +68,7 @@ x-chatwoot-common: &chatwoot-common
     FORCE_SSL: "false"
   volumes:
     - chatwoot-storage:/app/storage
+    - ./chatwoot-gemfile:/app/Gemfile
   networks:
     - smb-net
 
@@ -308,74 +309,38 @@ services:
         limits:
           memory: 512M
 
-  # ─── Muslimbot KB BFF (Knowledge Hub API) ─────────────────────────────
-  muslimbot-kb-bff:
-    build:
-      context: ./Muslimbot-voice-agent
-      dockerfile: Dockerfile
-    image: muslimbot-voice-agent:latest
-    container_name: gcp-muslimbot-kb-bff
-    restart: unless-stopped
-    command: ["uvicorn", "kb_bff.main:app", "--host", "0.0.0.0", "--port", "8787"]
-    ports:
-      - "${KB_BFF_PORT:-8787}:8787"
-    env_file: .env
-    environment:
-      - ERPNEXT_URL=http://frappe-web:8000
-      - REDIS_URL=redis://redis-cache:6379/2
-      - KB_DATA_DIR=/app/data
-      - TENANT_ID=${TENANT_ID:-default}
-      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
-      - LIVEKIT_URL=${LIVEKIT_URL:-}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
-      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
-      # Vertex AI RAG (optional — leave empty for SQLite fallback)
-      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
-      - GCS_KB_BUCKET=${GCS_KB_BUCKET:-}
-      - VERTEX_LOCATION=${VERTEX_LOCATION:-us-central1}
-    volumes:
-      - muslimbot-kb-data:/app/data
-    depends_on:
-      redis-cache:
-        condition: service_started
-    networks:
-      - smb-net
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
   # ─── Generative UI (React SPA + nginx API proxy) ─────────────────────
   generative-ui:
+    # Build context points at the repo-root rewrite (../generative-ui), the canonical
+    # Next.js 16 App-Router pane. The old MuslimBot/generative-ui tree is retained until
+    # the repo restructure moves the rewrite into place. See
+    # docs/GENUI_UNIFIED_IMPLEMENTATION_PLAN.md and memory generative-ui-two-trees.
     build:
-      context: ./generative-ui
+      context: ../generative-ui
       dockerfile: Dockerfile
       args:
-        VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-}
-        VITE_LIVEKIT_URL: ${LIVEKIT_URL:-}
+        # NEXT_PUBLIC_* are inlined at build time (see the Dockerfile).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.${PUBLIC_DOMAIN:-smb.localhost}}
+        NEXT_PUBLIC_AUTHENTIK_URL: ${NEXT_PUBLIC_AUTHENTIK_URL:-https://auth.${PUBLIC_DOMAIN:-smb.localhost}}
     image: ${REGISTRY:-localhost}/generative-ui:${IMAGE_TAG:-latest}
     container_name: gcp-generative-ui
     restart: unless-stopped
     ports:
-      - "${GENERATIVE_UI_PORT:-5173}:80"
+      - "${GENERATIVE_UI_PORT:-3000}:3000"
     environment:
       - FRAPPE_SITE_HOST=${FRAPPE_SITE_HOST:-${FRAPPE_SITE_NAME:-small.localhost}:8000}
       - FRAPPE_API_KEY=${FRAPPE_API_KEY}
       - FRAPPE_API_SECRET=${FRAPPE_API_SECRET}
-      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
     depends_on:
       frappe-web:
-        condition: service_started
-      muslimbot-kb-bff:
         condition: service_started
     networks:
       - smb-net
     deploy:
       resources:
         limits:
-          memory: 128M
+          # A Next.js Node server needs more headroom than the old static build.
+          memory: 512M
 
   # ─── Chatwoot (optional — profile: support) ──────────────────────────
   chatwoot-rails:
@@ -426,16 +391,15 @@ services:
     command: ["python", "agent.py", "start"]
     env_file: .env
     environment:
-      - ERPNEXT_URL=http://frappe-web:8000
-      - N8N_URL=http://n8n:5678
+      - GO_ORCHESTRATOR_URL=${GO_ORCHESTRATOR_URL:-http://go-orchestrator:8080}
       - REDIS_URL=redis://redis-cache:6379/2
       - TENANT_ID=${TENANT_ID:-default}
-      # Defaults to the self-hosted livekit service below; override in .env to
-      # point at LiveKit Cloud instead.
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}
       - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_VOICE_MODEL=${GEMINI_VOICE_MODEL:-gemini-2.0-flash-live-001}
     networks:
       - smb-net
     depends_on:
@@ -533,7 +497,6 @@ volumes:
   redis-queue-data:
   n8n-data:
   chatwoot-storage:
-  muslimbot-kb-data:
 
 networks:
   smb-net:

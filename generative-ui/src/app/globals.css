@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────────
+   SEMANTIC DESIGN TOKENS
+   Dark mode = default. Light mode via .light class.
+   ────────────────────────────────────────────── */
+
+:root {
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --bg-background: #020617;       /* slate-950 — deep navy */
+  --bg-surface: #0f172a;          /* slate-900 — cards, sidebars */
+  --bg-surface-hover: #1e293b;    /* slate-800 — hover states */
+
+  /* Text */
+  --text-primary: #f1f5f9;        /* slate-100 — high contrast */
+  --text-secondary: #94a3b8;      /* slate-400 — muted */
+
+  /* Accent (brand green) */
+  --brand-accent: #10b981;        /* emerald-500 */
+  --brand-accent-muted: rgba(16, 185, 129, 0.15);
+  --brand-accent-border: rgba(16, 185, 129, 0.35);
+
+  /* Borders */
+  --border-divider: #1e293b;      /* slate-800 — subtle borders */
+
+  /* Status colors */
+  --status-success: #10b981;
+  --status-warning: #f59e0b;
+  --status-error: #ef4444;
+  --status-info: #3b82f6;
+
+  /* Scrollbar */
+  --scrollbar-track: #0f172a;
+  --scrollbar-thumb: #334155;
+  --scrollbar-thumb-hover: #475569;
+}
+
+/* Light mode overrides */
+.light {
+  color-scheme: light;
+
+  --bg-background: #f8f6f0;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f1f5f9;
+
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+
+  --brand-accent: #059669;
+  --brand-accent-muted: rgba(5, 150, 105, 0.1);
+  --brand-accent-border: rgba(5, 150, 105, 0.3);
+
+  --border-divider: #e2e8f0;
+
+  --status-success: #059669;
+  --status-warning: #d97706;
+  --status-error: #dc2626;
+  --status-info: #2563eb;
+
+  --scrollbar-track: #f1f5f9;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+}
+
+/* ──────────────────────────────────────────────
+   TAILWIND v4 THEME EXTENSION
+   Maps semantic CSS vars to Tailwind utilities
+   ────────────────────────────────────────────── */
+
+@theme {
+  /* Semantic colors → Tailwind classes */
+  --color-background: var(--bg-background);
+  --color-surface: var(--bg-surface);
+  --color-surface-hover: var(--bg-surface-hover);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-accent: var(--brand-accent);
+  --color-accent-muted: var(--brand-accent-muted);
+  --color-accent-border: var(--brand-accent-border);
+  --color-divider: var(--border-divider);
+
+  /* Status */
+  --color-success: var(--status-success);
+  --color-warning: var(--status-warning);
+  --color-error: var(--status-error);
+  --color-info: var(--status-info);
+
+  /* Legacy — keep existing theme tokens alive */
+  --color-slate-950: #020617;
+  --color-slate-900: #0f172a;
+  --color-slate-800: #1e293b;
+
+  /* Animations */
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-float: float 6s ease-in-out infinite;
+
+  /* Gradients */
+  --background-image-gradient-radial: radial-gradient(var(--tw-gradient-stops));
+  --background-image-hero-glow: conic-gradient(from 180deg at 50% 50%, #10b98133 0deg, #020617 180deg, #10b98133 360deg);
+}
+
+/* ──────────────────────────────────────────────
+   BASE STYLES
+   ────────────────────────────────────────────── */
+
+body {
+  background-color: var(--bg-background);
+  color: var(--text-secondary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Float animation for micro-interactions */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* ──────────────────────────────────────────────
+   CUSTOM SCROLLBAR
+   ────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ──────────────────────────────────────────────
+   FOCUS RING OVERRIDE
+   Suppress default browser focus rings globally,
+   components use focus:ring-2 focus:ring-accent
+   ────────────────────────────────────────────── */
+
+*:focus {
+  outline: none;
+}
+
+/* ──────────────────────────────────────────────
+   UTILITIES
+   ────────────────────────────────────────────── */
+
+/* Hide scrollbar (used by the floating nav pill) while keeping it scrollable */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

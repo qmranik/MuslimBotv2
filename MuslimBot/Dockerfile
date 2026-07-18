@@ -47,8 +47,13 @@ RUN ./env/bin/pip install -e /home/frappe/frappe-bench/apps/small_erp
 RUN sed -i -e '$a\' sites/apps.txt 2>/dev/null; \
     grep -qxF 'small_erp' sites/apps.txt 2>/dev/null || echo 'small_erp' >> sites/apps.txt
 
+# Get additional apps
+RUN bench get-app --branch version-15 payments
+RUN bench get-app --branch version-15 hrms
+RUN bench get-app crm
+
 # Build frontend assets (CSS, JS)
-RUN bench build --app small_erp
+RUN bench build --app small_erp --app hrms --app crm
 
 # Copy n8n workflow configs into the image for easy import
 COPY --chown=frappe:frappe small_erp/configs/n8n/ /home/frappe/frappe-bench/configs/n8n/

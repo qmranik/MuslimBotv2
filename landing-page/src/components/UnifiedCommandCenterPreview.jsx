@@ -1,131 +1,117 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React from 'react';
+import { Activity, MessageSquare, Database, Sparkles, Workflow } from 'lucide-react';
 
-const UnifiedCommandCenterPreview = () => {
-  const [activeTab, setActiveTab] = useState('support');
-
+export function UnifiedCommandCenterPreview() {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '24rem',
-      width: '100%',
-      maxWidth: '42rem',
-      overflow: 'hidden',
-      borderRadius: '16px',
-      border: '1px solid rgba(255,255,255,0.1)',
-      background: 'var(--bg-base)',
-      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-      margin: '0 auto'
-    }}>
-      {/* GenUI Universal Header & Navigation Pill */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        background: 'rgba(5, 5, 5, 0.8)',
-        padding: '0.75rem 1rem',
-        backdropFilter: 'blur(12px)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <div style={{ height: '12px', width: '12px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.8)' }}></div>
-            <div style={{ height: '12px', width: '12px', borderRadius: '50%', background: 'rgba(245, 158, 11, 0.8)' }}></div>
-            <div style={{ height: '12px', width: '12px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.8)' }}></div>
-          </div>
-          <span style={{ marginLeft: '1rem', fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-            MuslimBot / Admin OS
-          </span>
+    <div className="w-full rounded-2xl border border-white/10 bg-black shadow-2xl overflow-hidden glass-panel">
+      {/* OS Header */}
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-4 py-3">
+        <div className="flex space-x-2">
+          <div className="h-3 w-3 rounded-full bg-white/20"></div>
+          <div className="h-3 w-3 rounded-full bg-white/20"></div>
+          <div className="h-3 w-3 rounded-full bg-white/20"></div>
         </div>
         
-        {/* Navigation Pill */}
-        <div style={{
-          display: 'flex',
-          gap: '4px',
-          borderRadius: '8px',
-          border: '1px solid rgba(255,255,255,0.05)',
-          background: 'rgba(255,255,255,0.02)',
-          padding: '4px'
-        }}>
-          {['support', 'erp', 'automation'].map((tab) => (
-            <button 
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              style={{
-                borderRadius: '6px',
-                padding: '4px 12px',
-                fontSize: '0.75rem',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                background: activeTab === tab ? '#9333ea' : 'transparent',
-                color: activeTab === tab ? '#fff' : 'var(--text-secondary)'
-              }}
-            >
-              {tab === 'support' && 'Omnichannel (Chatwoot)'}
-              {tab === 'erp' && 'ERP Hub'}
-              {tab === 'automation' && 'Workflows (n8n)'}
-            </button>
-          ))}
+        {/* Floating Pill Tabs */}
+        <div className="flex space-x-1 bg-black rounded-full border border-white/10 p-1">
+          <button className="px-4 py-1.5 rounded-full text-xs font-bold text-black bg-white transition-colors">
+            Omnichannel
+          </button>
+          <button className="px-4 py-1.5 rounded-full text-xs font-medium text-white/50 hover:text-white transition-colors">
+            ERP Hub
+          </button>
+          <button className="px-4 py-1.5 rounded-full text-xs font-medium text-white/50 hover:text-white transition-colors">
+            Workflows
+          </button>
+        </div>
+        
+        <div className="flex items-center space-x-2 text-xs font-mono text-white/40">
+          <Activity size={14} className="text-[#00FF00]" />
+          <span>99.9% Uptime</span>
         </div>
       </div>
 
-      {/* Simulated Secure Iframe Content Area */}
-      <div style={{ position: 'relative', flex: 1, background: 'rgba(20,20,20,0.3)', padding: 0 }}>
-        {/* Generative AI Overlay (The "Brain") */}
-        <div style={{
-          position: 'absolute',
-          bottom: '1rem',
-          right: '1rem',
-          zIndex: 10,
-          width: '18rem',
-          borderRadius: '12px',
-          border: '1px solid rgba(255,255,255,0.1)',
-          background: 'rgba(15, 23, 42, 0.95)',
-          padding: '1rem',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
-          backdropFilter: 'blur(16px)'
-        }}>
-           <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-             <span style={{ height: '8px', width: '8px', borderRadius: '50%', background: '#34d399', animation: 'pulseGlow 2s infinite' }}></span>
-             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#34d399' }}>GenAI Assistant Active</span>
-           </div>
-           <p style={{ fontSize: '0.75rem', color: '#cbd5e1', margin: 0, lineHeight: 1.5 }}>
-             {activeTab === 'support' && "Analyzing incoming WhatsApp intent... Suggesting zero-cost replacement order."}
-             {activeTab === 'erp' && "Extracting sales velocity from small_erp APIs for the last 24 hours."}
-             {activeTab === 'automation' && "Validating n8n webhook routing against the 21-tool catalog."}
-           </p>
+      {/* 3-Pane Orchestration View */}
+      <div className="grid grid-cols-1 md:grid-cols-3 h-[400px]">
+        
+        {/* Pane 1: Ingestion */}
+        <div className="border-r border-white/5 p-6 flex flex-col justify-center relative">
+          <div className="absolute top-4 left-4 text-[10px] font-mono tracking-widest text-white/30 uppercase">Ingestion Stream</div>
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 shadow-lg transform -rotate-1 hover:rotate-0 transition-transform">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className="p-2 bg-[#25D366]/20 rounded-lg text-[#25D366]">
+                <MessageSquare size={16} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">WhatsApp</div>
+                <div className="text-[10px] text-white/50">+880 171 234 ****</div>
+              </div>
+            </div>
+            <p className="text-sm text-slate-300 font-medium">
+              "My last order arrived damaged. What can you do?"
+            </p>
+          </div>
         </div>
 
-        {/* Tab Content Mockups */}
-        <div style={{
-          display: 'flex',
-          height: '100%',
-          width: '100%',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '2px dashed rgba(255,255,255,0.1)',
-          color: 'var(--text-muted)'
-        }}>
-           <AnimatePresence mode="wait">
-             <motion.div
-               key={activeTab}
-               initial={{ opacity: 0, scale: 0.95 }}
-               animate={{ opacity: 1, scale: 1 }}
-               exit={{ opacity: 0, scale: 0.95 }}
-               transition={{ duration: 0.2 }}
-               style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-             >
-               {activeTab === 'support' && "[ Secure Chatwoot Iframe Rendered via X-authentik-user ]"}
-               {activeTab === 'erp' && "[ Headless Frappe Sales Dashboard Rendered ]"}
-               {activeTab === 'automation' && "[ n8n Canvas Rendered ]"}
-             </motion.div>
-           </AnimatePresence>
+        {/* Pane 2: AI Processing */}
+        <div className="border-r border-white/5 p-6 flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="absolute top-4 left-4 text-[10px] font-mono tracking-widest text-white/30 uppercase">Orchestrator</div>
+          
+          {/* Glowing Badge */}
+          <div className="relative group flex justify-center items-center">
+            <div className="absolute w-32 h-32 bg-[#00FF00]/20 rounded-full blur-2xl animate-pulse-slow"></div>
+            <div className="relative h-20 w-20 bg-black border border-[#00FF00]/50 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(0,255,0,0.2)]">
+              <Sparkles className="text-[#00FF00]" size={32} />
+            </div>
+          </div>
+          
+          <div className="mt-8 space-y-2 w-full max-w-[200px]">
+            <div className="flex items-center justify-between text-xs font-mono">
+              <span className="text-white/50">Sentiment</span>
+              <span className="text-rose-400">Negative</span>
+            </div>
+            <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-rose-400 w-3/4"></div>
+            </div>
+            
+            <div className="flex items-center justify-between text-xs font-mono pt-2">
+              <span className="text-white/50">Action</span>
+              <span className="text-[#00FF00]">Escalate</span>
+            </div>
+          </div>
         </div>
+
+        {/* Pane 3: System of Record */}
+        <div className="p-6 flex flex-col justify-center relative">
+          <div className="absolute top-4 left-4 text-[10px] font-mono tracking-widest text-white/30 uppercase">ERP Mutation</div>
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 shadow-lg transform translate-x-2">
+            <div className="flex items-center space-x-3 mb-4 border-b border-white/10 pb-3">
+              <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400">
+                <Database size={16} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">ERPNext API</div>
+                <div className="text-[10px] text-[#00FF00] font-mono">200 OK</div>
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-white/40 font-mono">Order ID</span>
+                <span className="text-white font-mono">#SO-00435</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-white/40 font-mono">LTV</span>
+                <span className="text-amber-400 font-bold">$12,450.00</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-white/40 font-mono">Status</span>
+                <span className="text-white px-2 py-0.5 bg-rose-500/20 text-rose-300 rounded text-[10px] uppercase font-bold">Replacement Auth</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );
-};
-
-export default UnifiedCommandCenterPreview;
+}

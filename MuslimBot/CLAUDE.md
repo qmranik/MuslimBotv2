@@ -42,15 +42,16 @@ liteERP/                          ← Repository root
 │   │       └── utils/
 │   └── configs/                  ← MariaDB + n8n workflow configs
 │
-├── Muslimbot-voice-agent/        ← Voice worker + KB BFF (port 8787)
-│   ├── agent.py                  ← 21 voice-callable ERP tools
-│   ├── kb_bff/                   ← Knowledge Hub HTTP API
+├── Muslimbot-voice-agent/        ← LiveKit-only Gemini voice worker
+│   ├── agent.py                  ← Voice tools via Go /v1/agent/*
+│   ├── services/                 ← Orchestrator client, memory, tool helpers
 │   ├── Dockerfile
-│   └── docker-compose.yml        ← Standalone (liteerp_smb-net)
+│   └── docker-compose.yml        ← Standalone worker (liteerp_smb-net)
 ├── go-orchestrator/              ← Unified backend orchestrator (Go/Gin, port 8080)
+│                                   Owns KB, voice-session, ToolAction confirmation
 ├── erp-flutter/                  ← Flutter mobile client (iOS/Android) against Frappe API
 ├── traefik/                      ← Traefik dynamic config (Authentik ForwardAuth)
-├── docs/                         ← PLATFORM_ORCHESTRATOR_SPEC.md and design docs
+├── docs/                         ← architecture/, production/, testing/ design docs
 ├── test-silos/                   ← Isolated QA stacks + silo test plans (silo1–8)
 ├── mcp-servers/                  ← AI dev integration (may be absent from checkout)
 └── seed-varient/                 ← Demo data bootstrapper (standalone)
@@ -83,7 +84,7 @@ bash small_erp/scripts/install-local.sh
 # Optional: Chatwoot
 docker compose -f docker-compose.local.yml --profile support up -d
 
-# Optional: voice worker (KB BFF is always on)
+# Optional: voice worker (requires LiveKit + Go orchestrator)
 docker compose -f docker-compose.local.yml --profile voice up -d
 ```
 
@@ -126,8 +127,8 @@ bash small_erp/scripts/deploy.sh
 | frappe-scheduler | Same as frappe-web | Cron-like scheduled tasks |
 | frappe-socketio | Same as frappe-web | Socket.IO realtime server |
 | n8n | n8nio/n8n:1.64.3 | AI workflow automation, webhooks (`http://n8n:5678`) |
-| generative-ui | Vite (local) / nginx (demo) | Chat-to-dashboard React app; proxies `/api` and `/kb-api` |
-| muslimbot-kb-bff | FastAPI (uvicorn) | Knowledge Hub API on port 8787 |
+| generative-ui | Next.js (canonical) | Chat-to-dashboard; calls Go `/v1/*` |
+| go-orchestrator | Go/Gin | KB ingestion/RAG, voice session, agent tools (:8080) |
 | muslimbot-voice-worker | LiveKit + Gemini | Voice ERP assistant (`--profile voice`) |
 | chatwoot | Chatwoot | Omnichannel support (demo always on; local `--profile support`) |
 | postiz | Postiz + Temporal | Social scheduling (demo compose only) |
@@ -147,7 +148,8 @@ Browser → /ops/<page>
 AI queries → n8n webhooks (http://n8n:5678/webhook/...)
   → n8n fetches ERPNext data, calls LLM, returns structured response
 
-generative-ui → /api → Frappe; /kb-api → muslimbot-kb-bff:8787
+generative-ui → /v1 → go-orchestrator:8080 (KB, voice session, ERP gateway)
+voice worker → /v1/agent/* → go-orchestrator (workload JWT)
 ```
 
 ### Standalone Mode
@@ -261,9 +263,11 @@ Critical variables:
 - `ADMIN_PASSWORD` — ERPNext Administrator password
 - `FRAPPE_API_KEY` / `FRAPPE_API_SECRET` — generated post-deploy for n8n ↔ Frappe
 - `FRAPPE_SITE_HOST` — generative-ui nginx Host header (e.g. `small.localhost:8000`)
-- `KB_BFF_API_KEY` — KB BFF auth (shared with generative-ui proxy)
+- `ORCHESTRATOR_SERVICE_API_KEY` — trusted internal service auth for Go (`X-Service-API-Key`)
+- `WORKLOAD_JWT_SECRET` — signs LiveKit worker JWTs for `/v1/agent/*`
 - `VITE_GEMINI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` — same Google AI Studio key
 - `LLM_PROVIDER` / `OPENAI_API_KEY` — optional OpenAI path in n8n
+- `LIVEKIT_INTERNAL_URL` / `LIVEKIT_PUBLIC_URL` — Go dispatch vs browser WSS URL
 
 ## Roles & Permissions
 
@@ -280,7 +284,10 @@ This grants granular read/create/write/submit permissions for all required docty
 
 ### Muslimbot-voice-agent
 
-Two services from one image: **muslimbot-kb-bff** (always on, port 8787) and **muslimbot-voice-worker** (`--profile voice`). LiveKit + Gemini voice assistant with 21 ERP tools.
+LiveKit-only Gemini voice worker (`--profile voice`). It does **not** expose HTTP
+KB APIs. GenUI calls Go `POST /v1/kb/voice/session`; Go dispatches named agent
+`muslimbot` with a workload JWT; the worker joins the room and calls
+`/v1/agent/*` for ERP reads and confirmed writes.
 
 ```bash
 # Local
@@ -293,12 +300,14 @@ docker compose --profile voice up -d
 cd Muslimbot-voice-agent && docker compose up -d
 ```
 
+See [docs/architecture/VOICE_BFF_REMOVAL.md](docs/architecture/VOICE_BFF_REMOVAL.md).
+
 ### go-orchestrator (Platform Orchestrator)
 
-A Go/Gin unified backend (`module muslimbot-orchestrator`, Go 1.26) that sits behind **Traefik** + **Authentik** and fronts all clients with one tenant-aware `/v1/*` API. Full design in [docs/PLATFORM_ORCHESTRATOR_SPEC.md](docs/PLATFORM_ORCHESTRATOR_SPEC.md). Runs via `docker-compose.extended.yml` (with `platform-postgres`, `platform-redis`, `authentik-server/worker`, `traefik`). Entrypoint `cmd/server/main.go`, listens on `PORT` (default `8080`).
+A Go/Gin unified backend (`module muslimbot-orchestrator`, Go 1.26) that sits behind **Traefik** + **Authentik** and fronts all clients with one tenant-aware `/v1/*` API. Full design in [docs/PLATFORM_ORCHESTRATOR_SPEC.md](docs/architecture/PLATFORM_ORCHESTRATOR_SPEC.md). Runs via `docker-compose.extended.yml` (with `platform-postgres`, `platform-redis`, `authentik-server/worker`, `traefik`). Entrypoint `cmd/server/main.go`, listens on `PORT` (default `8080`).
 
-- **Auth**: no custom JWT/passwords — Authentik owns identity. Traefik ForwardAuth injects `X-authentik-email` / `-username` / `-groups` / `-name` headers, read by `internal/auth/middleware.go`.
-- **Structure**: `internal/gateway/proxy.go` (Frappe + KB BFF proxy with token masking), `internal/ai/router.go` (Gemini chat), `internal/portals/handler.go` (SSO bridge for embedded iframes: Chatwoot, Postiz, n8n), `internal/events/handler.go` (outbox pattern), `internal/tenants/handler.go`, `internal/store/db.go` (GORM: `Tenant`, `TenantUserMapping`, `EventOutbox`).
+- **Auth**: Authentik forward-auth for browsers; workload JWT for LiveKit workers; service API key for n8n.
+- **Structure**: `internal/gateway/proxy.go` (read-only Frappe proxy), `internal/ai/` (KB + Gemini), `internal/actions/` (durable ToolAction confirmations), `internal/auth/workload.go`, `internal/store/` (VoiceSession/ToolAction audit).
 
 ```bash
 cd go-orchestrator && go run ./cmd/server   # or via docker-compose.extended.yml

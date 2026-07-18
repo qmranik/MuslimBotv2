@@ -5,9 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY agent.py .
-COPY bff_main.py .
-COPY routes/ ./routes/
 COPY services/ ./services/
-RUN mkdir -p /app/data && chown -R muslimbot:muslimbot /app
+RUN chown -R muslimbot:muslimbot /app
 USER muslimbot
 CMD ["python", "agent.py", "start"]

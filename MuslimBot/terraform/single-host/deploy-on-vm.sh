@@ -42,7 +42,7 @@ EOF
   fi
 
   sudo systemctl start containerd docker
-  docker info --format 'Docker root: {{.DockerRootDir}}'
+  sudo docker info --format 'Docker root: {{.DockerRootDir}}'
 else
   echo "Docker data-root is already configured."
 fi
@@ -77,7 +77,7 @@ if [ ! -f "/opt/muslimbot/secrets/muslimbot.env" ] || ! grep -q "PUBLIC_DOMAIN" 
   sed -i "s/^N8N_ENCRYPTION_KEY=.*/N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)/" "$ENV_FILE"
   sed -i "s/^CHATWOOT_DB_PASSWORD=.*/CHATWOOT_DB_PASSWORD=$(openssl rand -hex 24)/" "$ENV_FILE"
   sed -i "s/^CHATWOOT_SECRET_KEY=.*/CHATWOOT_SECRET_KEY=$(openssl rand -hex 64)/" "$ENV_FILE"
-  sed -i "s/^KB_BFF_API_KEY=.*/KB_BFF_API_KEY=$(openssl rand -hex 32)/" "$ENV_FILE"
+  sed -i "s/^ORCHESTRATOR_SERVICE_API_KEY=.*/ORCHESTRATOR_SERVICE_API_KEY=$(openssl rand -hex 32)/" "$ENV_FILE"
   echo "AUTHENTIK_SECRET_KEY=$(openssl rand -hex 64)" >> "$ENV_FILE"
   echo "TRYPOST_DB_PASSWORD=$(openssl rand -hex 24)" >> "$ENV_FILE"
   echo "TRYPOST_APP_KEY=base64:$(openssl rand -base64 32)" >> "$ENV_FILE"
@@ -105,15 +105,15 @@ else
 fi
 
 echo "==> Validating Compose..."
-docker compose --profile support --profile voice config >/dev/null
+sudo docker compose --profile support --profile voice config >/dev/null
 echo "Compose configuration is valid."
 
 echo "==> Building Docker images (this may take a while)..."
-docker build -t localhost/small-erp:latest .
-docker compose --profile support --profile voice build
+sudo docker build -t localhost/small-erp:latest .
+sudo docker compose --profile support --profile voice build
 
 echo "==> Starting application stack (core + support + voice)..."
-docker compose --profile support --profile voice up -d
+sudo docker compose --profile support --profile voice up -d
 
 echo "==> Waiting for services to stabilize..."
 sleep 20
@@ -124,8 +124,8 @@ bash small_erp/scripts/install-demo.sh
 
 echo "==> Starting Edge Stack (Traefik, Authentik, Orchestrator, TryPost)..."
 cd /opt/muslimbot/repo/MuslimBot
-docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f docker-compose.yml -f ../docker-compose.extended.yml --profile support --profile voice build
-docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f docker-compose.yml -f ../docker-compose.extended.yml --profile support --profile voice up -d
+sudo docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f docker-compose.yml -f ../docker-compose.extended.yml --profile support --profile voice build
+sudo docker compose --env-file /opt/muslimbot/secrets/muslimbot.env -f docker-compose.yml -f ../docker-compose.extended.yml --profile support --profile voice up -d
 
 echo ""
 echo "=========================================================="
@@ -137,7 +137,7 @@ echo "  --zone=asia-south1-a \\"
 echo "  --project=gen-lang-client-0113022969 \\"
 echo "  -- \\"
 echo "  -L 8000:localhost:8000 -L 5173:localhost:5173 \\"
-echo "  -L 5678:localhost:5678 -L 8787:localhost:8787 \\"
+echo "  -L 5678:localhost:5678 -L 8080:localhost:8080 \\"
 echo "  -L 3000:localhost:3000"
 echo ""
 echo "Or wait until edge stack (Traefik/DNS/TLS) is configured."

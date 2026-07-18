@@ -3,6 +3,7 @@ package store
 import (
 	"log"
 	"os"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -31,15 +32,27 @@ type Tenant struct {
 	FeaturesJSON   string `gorm:"type:text" json:"features_json"`
 }
 
-// EventOutbox stores cross-service events for async dispatch to n8n.
+// EventOutbox stores cross-service events for async dispatch (n8n and/or Redis Streams).
 type EventOutbox struct {
 	gorm.Model
-	Type           string `json:"type"`
-	TenantID       string `json:"tenant_id"`
-	Source         string `json:"source"`
-	Payload        string `json:"payload"`
-	IdempotencyKey string `gorm:"uniqueIndex" json:"idempotency_key"`
-	Status         string `gorm:"default:'pending'" json:"status"`
+	EventID        string     `gorm:"index" json:"event_id"`
+	Type           string     `json:"type"`
+	TenantID       string     `gorm:"index" json:"tenant_id"`
+	Source         string     `json:"source"`
+	AggregateType  string     `json:"aggregate_type"`
+	AggregateID    string     `json:"aggregate_id"`
+	Payload        string     `gorm:"type:text" json:"payload"`
+	IdempotencyKey string     `gorm:"uniqueIndex" json:"idempotency_key"`
+	Status         string     `gorm:"default:'pending';index" json:"status"`
+	Destination    string     `gorm:"index" json:"destination"` // n8n | redis_stream
+	Topic          string     `json:"topic"`
+	Attempts       int        `gorm:"default:0" json:"attempts"`
+	MaxAttempts    int        `gorm:"default:8" json:"max_attempts"`
+	AvailableAt    *time.Time `gorm:"index" json:"available_at,omitempty"`
+	LockedAt       *time.Time `json:"locked_at,omitempty"`
+	LockedBy       string     `json:"locked_by"`
+	LastError      string     `gorm:"type:text" json:"last_error"`
+	SentAt         *time.Time `json:"sent_at,omitempty"`
 }
 
 // KBSource tracks knowledge base sources for RAG. The go-orchestrator owns this
@@ -47,15 +60,27 @@ type EventOutbox struct {
 // (referenced by RagFileID). Visibility distinguishes org-public knowledge
 // (readable by customers/portal) from private/internal knowledge (staff only).
 type KBSource struct {
-	ID         string `gorm:"primaryKey;not null" json:"id"`
-	TenantID   string `gorm:"index" json:"tenant_id"`
-	Title      string `json:"title"`
-	SourceType string `json:"source_type"`
-	URL        string `json:"url"`
-	RagFileID  string `json:"rag_file_id"` // Vertex AI RAG file/corpus reference
-	Visibility string `gorm:"default:'private';index" json:"visibility"` // public | private
-	UploadedBy string `json:"uploaded_by"`
-	Status     string `gorm:"default:'queued'" json:"status"`
+	ID             string     `gorm:"primaryKey;not null" json:"id"`
+	TenantID       string     `gorm:"index;not null" json:"tenant_id"`
+	Title          string     `json:"title"`
+	SourceType     string     `json:"source_type"`
+	URL            string     `json:"url"`
+	RagFileID      string     `gorm:"index" json:"rag_file_id"`
+	GCSObject      string     `json:"gcs_object"`
+	ChunkCount     int        `json:"chunk_count"`
+	Error          string     `gorm:"type:text" json:"error"`
+	Visibility     string     `gorm:"default:'private';index" json:"visibility"`
+	UploadedBy     string     `json:"uploaded_by"`
+	Status         string     `gorm:"default:'queued';index" json:"status"`
+	Revision       int64      `gorm:"default:1" json:"revision"`
+	ContentHash    string     `json:"content_hash"`
+	MetadataStatus string     `gorm:"default:'pending';index" json:"metadata_status"`
+	VertexOperationID string  `json:"vertex_operation_id"`
+	IndexedAt      *time.Time `json:"indexed_at,omitempty"`
+	LastSyncedAt   *time.Time `json:"last_synced_at,omitempty"`
+	DeletedAt      *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // InitDB connects to the platform PostgreSQL instance and runs auto-migrations.
@@ -71,7 +96,17 @@ func InitDB() {
 		return
 	}
 
-	err = db.AutoMigrate(&TenantUserMapping{}, &Tenant{}, &EventOutbox{}, &KBSource{})
+	err = db.AutoMigrate(
+		&TenantUserMapping{},
+		&Tenant{},
+		&EventOutbox{},
+		&KBSource{},
+		&TenantKBState{},
+		&KBIngestionJob{},
+		&VoiceSession{},
+		&ToolAction{},
+		&ToolAuditEvent{},
+	)
 	if err != nil {
 		log.Println("Failed to migrate database schema:", err)
 	}

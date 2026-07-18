@@ -56,16 +56,19 @@ func AuthentikMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		hostTenant := TenantFromHost(c.Request.Host, cfg.PlatformBaseDomain)
 
-		// Service-to-service key (voice/KB BFF). Constant-time compare.
-		apiKey := c.GetHeader("X-KB-API-Key")
-		if cfg.KBBffAPIKey != "" && apiKey != "" &&
-			subtle.ConstantTimeCompare([]byte(apiKey), []byte(cfg.KBBffAPIKey)) == 1 {
-			tenantID := firstNonEmpty(hostTenant, c.GetHeader("X-Tenant-Id"), "default")
+		// Service-to-service key for trusted internal callers (n8n). Constant-time compare.
+		// LiveKit workers must use WorkloadMiddleware JWTs — service keys do not grant
+		// arbitrary tenant selection or admin groups.
+		apiKey := firstNonEmpty(c.GetHeader("X-Service-API-Key"), c.GetHeader("X-KB-API-Key"))
+		serviceSecret := firstNonEmpty(cfg.OrchestratorServiceAPIKey, cfg.KBBffAPIKey)
+		if serviceSecret != "" && apiKey != "" &&
+			subtle.ConstantTimeCompare([]byte(apiKey), []byte(serviceSecret)) == 1 {
+			tenantID := firstNonEmpty(hostTenant, "default")
 			c.Set("tenant_id", tenantID)
-			c.Set("user_email", "system-voice@small.localhost")
-			c.Set("user_name", "system-voice")
-			c.Set("user_full_name", "System Voice Agent")
-			c.Set("user_groups", []string{"admins"})
+			c.Set("user_email", "system-service@small.localhost")
+			c.Set("user_name", "system-service")
+			c.Set("user_full_name", "System Service")
+			c.Set("user_groups", []string{"service"})
 			c.Set("auth_mode", "service-key")
 			c.Next()
 			return
@@ -148,17 +151,28 @@ func AuthentikMiddleware(cfg *config.Config) gin.HandlerFunc {
 // When no platform DB is configured at all, single-tenant "default" is a
 // legitimate deployment and is allowed.
 func resolveTenant(hostTenant, headerTenant, email string) (string, bool) {
-	if t := firstNonEmpty(hostTenant, headerTenant); t != "" {
+	// Prefer email→tenant mapping when a platform DB is available. Host slug may
+	// hint the tenant, but X-Tenant-Id from browsers is never trusted alone.
+	if store.DB != nil {
+		var mapping store.TenantUserMapping
+		if err := store.DB.Where("email = ?", email).First(&mapping).Error; err == nil {
+			if hostTenant != "" && hostTenant != mapping.TenantID {
+				log.Printf("[auth] host tenant %q ignored; email maps to %q", hostTenant, mapping.TenantID)
+			}
+			if headerTenant != "" && headerTenant != mapping.TenantID {
+				log.Printf("[auth] rejecting mismatched X-Tenant-Id %q for mapped tenant %q", headerTenant, mapping.TenantID)
+			}
+			return mapping.TenantID, true
+		}
+		if hostTenant != "" {
+			return hostTenant, true
+		}
+		return "", false
+	}
+	if t := firstNonEmpty(hostTenant); t != "" {
 		return t, true
 	}
-	if store.DB == nil {
-		return "default", true // single-tenant deployment, no mapping table
-	}
-	var mapping store.TenantUserMapping
-	if err := store.DB.Where("email = ?", email).First(&mapping).Error; err != nil {
-		return "", false // mapping table exists but caller is unmapped → deny
-	}
-	return mapping.TenantID, true
+	return "default", true // single-tenant deployment, no mapping table
 }
 
 // parseCIDRs parses a comma-separated CIDR/IP allowlist. Bare IPs are treated

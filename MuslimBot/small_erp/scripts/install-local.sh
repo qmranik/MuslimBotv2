@@ -109,7 +109,7 @@ echo ""
 echo "After Python or template changes:"
 echo "  $COMPOSE exec frappe-web bench build --app small_erp"
 echo "  $COMPOSE restart frappe-web"
-echo "  KB BFF:        http://localhost:8787/health"
+echo "  Go orchestrator: http://localhost:8080/v1/sys/health
 echo ""
 echo "Next: see wayToDemo.md — import n8n workflows, seed demo data, open Knowledge Hub in generative-ui"
 echo ""

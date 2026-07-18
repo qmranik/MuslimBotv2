@@ -16,7 +16,7 @@ This file contains high-signal context and constraints for AI agents working in 
   3. Guard with `frappe.has_permission("DocType", throw=True)`
   4. Call from HTMX via `frappeCall('small_erp.api.<module>.<function>', {args})`
 - **n8n Integration:** AI workflows run in n8n (`http://small-n8n:5678`), authenticating to Frappe via API keys. The `_notify_n8n()` helper in `events.py` is fire-and-forget.
-- **Voice / generative-ui:** Voice agent lives in `Muslimbot-voice-agent/` (port 8787 for KB BFF). The React generative UI is in `generative-ui/`.
+- **Voice / generative-ui:** Voice agent lives in `Muslimbot-voice-agent/` (LiveKit-only worker). Knowledge Hub APIs and voice-session minting are owned by `go-orchestrator` (`/v1/kb/*`, `/v1/agent/*`). The React generative UI is in repo-root `generative-ui/`.
 
 ## Developer Commands
 Commands must be run from the repository root using the local compose file.

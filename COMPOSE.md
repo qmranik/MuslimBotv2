@@ -64,7 +64,7 @@ bash small_erp/scripts/install-demo.sh
 
 | Profile | Compose file | Services enabled |
 |---------|--------------|------------------|
-| *(default)* | local + demo | Core ERP, n8n, generative-ui, **muslimbot-kb-bff** (always on) |
+| *(default)* | local + demo | Core ERP, n8n, generative-ui; KB via **go-orchestrator** |
 | `support` | **local only** | Chatwoot rails + worker |
 | `voice` | local + demo | **muslimbot-voice-worker** (LiveKit agent) |
 
@@ -77,9 +77,10 @@ Chatwoot is **always on** in demo compose (no profile). Postiz + Temporal run in
 | Service | Default port | URL (local) |
 |---------|-------------|-------------|
 | small_erp `/ops` | 8000 | http://localhost:8000/ops |
-| Generative UI | 5173 | http://localhost:5173 |
+| Generative UI | 3000 / 5173 | http://localhost:3000 (demo) / :5173 (legacy Vite) |
+| Go orchestrator | 8080 | http://localhost:8080/v1/sys/health |
 | n8n | 5678 | http://localhost:5678 |
-| Muslimbot KB BFF | 8787 | http://localhost:8787/health |
+| LiveKit | 7880 | ws://localhost:7880 |
 | Chatwoot | 3000 | http://localhost:3000 |
 | Postiz | 4007 | http://localhost:4007 |
 | Temporal UI | 8088 | http://localhost:8088 |
@@ -99,7 +100,7 @@ flowchart LR
     L_Frappe[frappe-web]
     L_GenUI[generative-ui Vite:5173]
     L_N8N[n8n]
-    L_KB[muslimbot-kb-bff:8787]
+    L_GO[go-orchestrator:8080]
     L_Voice[muslimbot-voice-worker profile voice]
     L_CW[Chatwoot profile support]
   end
@@ -108,7 +109,7 @@ flowchart LR
     D_Frappe[frappe-web]
     D_GenUI[generative-ui nginx:5173]
     D_N8N[n8n]
-    D_KB[muslimbot-kb-bff:8787]
+    D_GO[go-orchestrator:8080]
     D_CW[Chatwoot]
     D_Postiz[Postiz + Temporal]
     D_Voice[muslimbot-voice-worker profile voice]
@@ -121,13 +122,13 @@ One Docker image (`Muslimbot-voice-agent/`) runs two processes:
 
 | Service | Command | Port | Always on? |
 |---------|---------|------|------------|
-| `muslimbot-kb-bff` | `uvicorn kb_bff.main:app` | 8787 | Yes (local + demo) |
+| `go-orchestrator` | Go `/v1/*` KB + voice session | 8080 | Via extended/platform compose |
 | `muslimbot-voice-worker` | `python agent.py start` | LiveKit | `--profile voice` |
 
 generative-ui proxies:
 
 - `/api/*` → Frappe (`frappe-web:8000`)
-- `/kb-api/*` → KB BFF (`muslimbot-kb-bff:8787`)
+- `/v1/kb/*` → Go orchestrator (ingestion, RAG, voice session)
 
 Standalone (external network): `cd Muslimbot-voice-agent && docker compose up` (expects `liteerp_smb-net`).
 
@@ -175,17 +176,18 @@ Idempotent re-run: [`scripts/configure-postgres-multidb.sh`](scripts/configure-p
 |----------|---------|-------|
 | `FRAPPE_SITE_NAME` | Frappe, install scripts | Site hostname (e.g. `small.localhost`) |
 | `FRAPPE_SITE_HOST` | generative-ui nginx | Host header for Frappe proxy (e.g. `small.localhost:8000`) |
-| `FRAPPE_API_KEY` / `FRAPPE_API_SECRET` | n8n, generative-ui, Muslimbot | Generate in ERPNext → Settings → API Access |
+| `FRAPPE_API_KEY` / `FRAPPE_API_SECRET` | Go orchestrator, n8n | Generate in ERPNext → Settings → API Access |
 | `VITE_GEMINI_API_KEY` | generative-ui build | Browser-side Gemini NLP router |
-| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Frappe, n8n, Muslimbot | Server-side Gemini (voice, RAG, KB) |
-| `KB_BFF_URL` | generative-ui Vite dev | Default `http://muslimbot-kb-bff:8787` in compose |
-| `KB_BFF_API_KEY` | generative-ui, KB BFF, n8n | Shared secret for `/kb-api` proxy |
-| `TENANT_ID` | KB BFF | Tenant namespace for KB data (default `default`) |
-| `LIVEKIT_URL` | voice worker, BFF, generative-ui build | WebSocket URL; baked as `VITE_LIVEKIT_URL` in demo image |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | voice worker, BFF | LiveKit Cloud credentials |
-| `LIVEKIT_AGENT_NAME` | voice worker, BFF dispatch | Default `muslimbot` |
-| `CORS_ORIGINS` | KB BFF | Allowed generative-ui origins (comma-separated) |
-| `ENVIRONMENT` | KB BFF | Set `production` to require `KB_BFF_API_KEY` |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Go, n8n, voice worker | Server-side Gemini (voice, RAG, KB) |
+| `GO_ORCHESTRATOR_URL` | voice worker | Default `http://go-orchestrator:8080` |
+| `ORCHESTRATOR_SERVICE_API_KEY` | Go, n8n | Trusted internal service auth (`X-Service-API-Key`) |
+| `WORKLOAD_JWT_SECRET` | Go | Signs LiveKit worker JWTs for `/v1/agent/*` |
+| `TENANT_ID` | voice worker fallback | Only used if dispatch metadata is missing |
+| `LIVEKIT_INTERNAL_URL` | Go dispatch | Docker-internal LiveKit URL |
+| `LIVEKIT_PUBLIC_URL` | Go → browser | Browser-resolvable `wss://…` URL |
+| `LIVEKIT_URL` | voice worker | Worker WebSocket URL |
+| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Go, voice worker | LiveKit credentials |
+| `LIVEKIT_AGENT_NAME` | Go dispatch, voice worker | Default `muslimbot` |
 | `POSTGRES_SHARED_PASSWORD` | demo only | Chatwoot + Postiz + Temporal |
 
 **Google AI Studio:** use one key from [aistudio.google.com](https://aistudio.google.com) and set all three:
@@ -196,7 +198,14 @@ GEMINI_API_KEY=<same>
 GOOGLE_API_KEY=<same>
 ```
 
-Root template: [`.env.template`](.env.template). generative-ui local overrides: [`generative-ui/.env.template`](generative-ui/.env.template).
+Root template: [`MuslimBot/.env.template`](MuslimBot/.env.template).
+
+KB / voice APIs (Go only):
+
+- `POST /v1/kb/sources/*` — ingestion
+- `POST /v1/kb/retrieve`, `POST /v1/kb/chat` — RAG
+- `POST /v1/kb/voice/session` — browser token + named agent dispatch
+- `POST /v1/agent/tool-actions` — durable confirmed ERP tools for the voice worker
 
 ---
 

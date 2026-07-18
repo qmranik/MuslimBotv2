@@ -366,23 +366,18 @@ services:
     command: ["python", "agent.py", "start"]
     env_file: .env
     environment:
-      - ERPNEXT_URL=http://frappe-web:8000
-      - N8N_URL=http://n8n:5678
+      - GO_ORCHESTRATOR_URL=${GO_ORCHESTRATOR_URL:-http://go-orchestrator:8080}
       - REDIS_URL=redis://redis-cache:6379/2
       - TENANT_ID=${TENANT_ID:-default}
-      # Defaults to the self-hosted livekit service below; override in .env to
-      # point at LiveKit Cloud instead.
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-devsecretlocalonlychangeme0123456}
       - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - GEMINI_VOICE_MODEL=${GEMINI_VOICE_MODEL:-gemini-2.0-flash-live-001}
     networks:
       - smb-net-local
     depends_on:
-      frappe-web:
-        condition: service_started
-      n8n:
-        condition: service_started
       livekit:
         condition: service_started
     profiles:

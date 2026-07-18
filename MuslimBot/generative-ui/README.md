@@ -94,7 +94,7 @@ Copy [`generative-ui/.env.template`](.env.template) → `.env` for local Vite. R
 - [wayToDemo.md](../wayToDemo.md) — **VM prep, prerequisites, full demo script**
 - [COMPOSE.md](../COMPOSE.md) — ports, profiles, compose modes
 - [Muslimbot-voice-agent/README.md](../Muslimbot-voice-agent/README.md) — KB BFF + voice worker
-- [docs/PLATFORM_ORCHESTRATOR_SPEC.md](../docs/PLATFORM_ORCHESTRATOR_SPEC.md) — Unified Backend Orchestrator specifications
+- [docs/PLATFORM_ORCHESTRATOR_SPEC.md](../docs/architecture/PLATFORM_ORCHESTRATOR_SPEC.md) — Unified Backend Orchestrator specifications
 
 ---
 

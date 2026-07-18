@@ -1,19 +1,34 @@
-# Small ERP (liteERP)
+# MuslimBot
 
-AI-driven ERP for small organizations, built on ERPNext v15, n8n automation, generative-ui chat-to-dashboard, Muslimbot voice + knowledge hub, and optional Chatwoot / Postiz in the demo stack.
+AI-agentic business OS for SMBs — a "single pane of glass" over ERPNext + every sub-system, driven by
+an AI agent. Built on ERPNext v15 + `small_erp`, a Go orchestrator (`/v1/*`), generative-ui, voice + KB,
+Chatwoot support, and TryPost social — unified behind Traefik + Authentik SSO on a single-host stack.
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
-| **ERPNext v15** | System of record (Frappe backend) |
-| **generative-ui** | React chat-to-dashboard (Gemini NLP router) |
+| **ERPNext v15 + small_erp** | System of record (Frappe backend, `/ops`) |
+| **go-orchestrator** | Unified `/v1/*` BFF + AI brain + MCP host (behind Traefik/Authentik) |
+| **generative-ui** | Next.js single control plane (agent chat, embedded portals) |
+| **Authentik + Traefik** | SSO (OIDC + ForwardAuth) + edge routing |
 | **n8n** | AI workflows, webhooks, RAG orchestration |
-| **Muslimbot** | LiveKit voice worker + KB BFF (port 8787) |
-| **Chatwoot** | Omnichannel support (demo always on; local via `--profile support`) |
-| **Postiz** | Social scheduling (demo compose only) |
+| **voice worker** | LiveKit + Gemini Live worker (tools via Go `/v1/agent/*`) |
+| **Chatwoot** | Omnichannel support (agent-driven via `mcp-chatwoot`, 129 tools) |
+| **TryPost** | Social scheduling (MCP-native; agent automates via TryPost MCP) |
 
-Canonical compose reference: **[COMPOSE.md](COMPOSE.md)**
+Compose reference: **[../COMPOSE.md](../COMPOSE.md)**
+
+---
+
+## 📚 Documentation
+
+Full docs index: **[docs/README.md](docs/README.md)**. Highlights:
+
+- [System overview](docs/architecture/SYSTEM_OVERVIEW.md) · [Orchestrator spec](docs/architecture/PLATFORM_ORCHESTRATOR_SPEC.md)
+- [Master implementation plan](docs/production/MASTER_IMPLEMENTATION_PLAN.md) · [Runbook](docs/production/RUNBOOK.md) · [Unified experience plan](docs/production/UNIFIED_EXPERIENCE_PLAN.md)
+- [Production readiness / gap register](docs/production/PRODUCTION_READINESS_PLAN.md) · [ADR-0001 (TryPost + Chatwoot MCP)](docs/architecture/ADR-0001-social-trypost-and-chatwoot-mcp.md)
+- Scripts catalog: **[scripts/README.md](scripts/README.md)** · one-command setup: **[`setup.sh`](setup.sh)**
 
 ---
 
@@ -30,9 +45,9 @@ bash small_erp/scripts/install-local.sh
 | URL | Service |
 |-----|---------|
 | http://localhost:8000/app | ERPNext Desk |
-| http://localhost:5173 | Generative UI (Vite dev server) |
+| http://localhost:3000 | Generative UI (canonical Next.js) |
 | http://localhost:5678 | n8n |
-| http://localhost:8787/health | Muslimbot KB BFF |
+| http://localhost:8080/v1/sys/health | Go orchestrator |
 
 Login: `Administrator` / value of `ADMIN_PASSWORD` in `.env`
 
@@ -74,16 +89,16 @@ docker compose --profile voice up -d   # optional
                            |
         +------------------+------------------+
         |                  |                  |
-   /app (Desk)      generative-ui:5173    Chatwoot / Postiz
+   /app (Desk)      generative-ui        Chatwoot / Postiz
         |                  |                  |
         v                  v                  v
-   [ frappe-web :8000 ]  /api → Frappe    webhooks
-        |                  /kb-api → KB BFF:8787
+   [ frappe-web :8000 ]  /v1 → Go :8080    webhooks
+        |                  |  KB / voice / ERP
         +--------+---------+---------+
                  |                   |
             [ MariaDB ]         [ n8n :5678 ]
             [ Redis x3 ]              |
-                 |              [ Muslimbot voice worker ]
+                 |              [ LiveKit + Muslimbot voice worker ]
             [ Workers ]
 ```
 
@@ -109,10 +124,12 @@ bash scripts/provision-tenant.sh acme "Acme Corp" SecurePassword123
 
 ## Muslimbot Voice Agent
 
-Real-time voice assistant with 21 ERP tools. KB BFF serves the Knowledge Hub API on port **8787**; generative-ui proxies `/kb-api` to it and provides in-browser **Call Muslimbot** via LiveKit WebRTC.
+LiveKit-only Gemini voice worker. Knowledge Hub APIs and voice-session minting
+are owned by the Go orchestrator (`POST /v1/kb/voice/session`). The worker joins
+dispatched rooms and calls `/v1/agent/*` with a signed workload JWT.
 
 ```bash
-# Local or demo — after core stack is up:
+# Local or demo — after core stack + Go orchestrator are up:
 docker compose -f docker-compose.local.yml --profile voice up -d
 # or: docker compose --profile voice up -d   (demo)
 
@@ -142,9 +159,9 @@ liteERP/
 │   └── scripts/
 │       ├── install-local.sh
 │       └── install-demo.sh
-├── generative-ui/                  # React chat-to-dashboard
-├── go-orchestrator/                # Go-based Orchestration API Gateway & Identity Provider
-├── Muslimbot-voice-agent/          # Voice worker + KB BFF
+├── generative-ui/                  # React chat-to-dashboard (canonical at repo root)
+├── go-orchestrator/                # Go BFF: KB, voice session, agent tools, ERP proxy
+├── Muslimbot-voice-agent/          # LiveKit-only voice worker
 ├── configs/                        # MariaDB, n8n, Postgres init
 ├── docs/
 │   └── PLATFORM_ORCHESTRATOR_SPEC.md # Unified Backend Orchestrator specifications
@@ -159,11 +176,12 @@ liteERP/
 |----------|-------------|
 | `DB_ROOT_PASSWORD` | MariaDB root password |
 | `ADMIN_PASSWORD` | ERPNext Administrator password |
-| `FRAPPE_API_KEY` / `FRAPPE_API_SECRET` | API token (post-setup) |
-| `FRAPPE_SITE_HOST` | generative-ui nginx Host header (`small.localhost:8000`) |
-| `KB_BFF_API_KEY` | KB BFF + generative-ui proxy auth |
-| `VITE_GEMINI_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Same Google AI Studio key |
-| `LIVEKIT_*` | Voice profile only |
+| `FRAPPE_API_KEY` / `FRAPPE_API_SECRET` | API token (post-setup) for Go → Frappe |
+| `FRAPPE_SITE_HOST` | Frappe Host header (`small.localhost:8000`) |
+| `ORCHESTRATOR_SERVICE_API_KEY` | Trusted internal service auth for Go |
+| `WORKLOAD_JWT_SECRET` | Signs LiveKit worker JWTs |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Same Google AI Studio key |
+| `LIVEKIT_*` / `LIVEKIT_PUBLIC_URL` | Voice profile + browser WSS URL |
 | `POSTGRES_SHARED_PASSWORD` | Demo: Chatwoot + Postiz + Temporal |
 
 Full list: [`.env.template`](.env.template)

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // IsProduction reports whether the runtime is a non-local environment. Empty
@@ -28,6 +29,18 @@ type Config struct {
 	FrappeToken    string
 	FrappeSecret   string
 
+	// OrchestratorServiceAPIKey authenticates trusted internal callers
+	// (n8n, migration aliases). Prefer WorkloadJWTSecret for LiveKit workers.
+	OrchestratorServiceAPIKey string
+	WorkloadJWTSecret         string
+
+	LiveKitInternalURL string
+	LiveKitPublicURL   string
+	LiveKitAPIKey      string
+	LiveKitAPISecret   string
+	LiveKitAgentName   string
+
+	// Deprecated aliases kept for cutover compatibility.
 	KBBffURL    string
 	KBBffAPIKey string
 
@@ -36,6 +49,11 @@ type Config struct {
 	N8NURLTemplate string
 	N8NPublicURL   string
 	WebhookSecret  string
+
+	// Webhook ingestion worker pool (N4). QueueSize bounds the in-memory buffer;
+	// Workers=0 → NumCPU*4.
+	WebhookQueueSize int
+	WebhookWorkers   int
 
 	GeminiAPIKey      string
 	GeminiRouterModel string
@@ -85,6 +103,17 @@ type Config struct {
 	GCPLocation    string
 	GCSBucketName  string
 	GCPRagCorpusID string
+	// GCPRagCorpusIDV2 is the metadata-tagged shared corpus (ADR-0002).
+	GCPRagCorpusIDV2 string
+
+	// RAG tenancy (shared corpus + mandatory metadata filters).
+	RagTenancyMode            string
+	RagMetadataSchemaVersion  string
+	RagAllowUnfiltered        bool
+	KBEventStreamPrefix       string
+	KBBriefTTLSec             int
+	KBRetrieveCacheTTLSec     int
+	KBEventStreamMaxLen       int64
 
 	RedisURL string
 }
@@ -102,14 +131,26 @@ func LoadConfig() *Config {
 		FrappeToken:    os.Getenv("FRAPPE_API_KEY"),
 		FrappeSecret:   os.Getenv("FRAPPE_API_SECRET"),
 
-		KBBffURL:    envOr("KBBFF_URL", "http://muslimbot-kb-bff:8787"),
-		KBBffAPIKey: os.Getenv("KBBFF_API_KEY"),
+		OrchestratorServiceAPIKey: firstEnv("ORCHESTRATOR_SERVICE_API_KEY", "KBBFF_API_KEY", "KB_BFF_API_KEY"),
+		WorkloadJWTSecret:         firstEnv("WORKLOAD_JWT_SECRET", "ORCHESTRATOR_SERVICE_API_KEY", "KBBFF_API_KEY", "KB_BFF_API_KEY"),
+
+		LiveKitInternalURL: firstEnv("LIVEKIT_INTERNAL_URL", "LIVEKIT_URL"),
+		LiveKitPublicURL:   firstEnv("LIVEKIT_PUBLIC_URL", "LIVEKIT_URL"),
+		LiveKitAPIKey:      os.Getenv("LIVEKIT_API_KEY"),
+		LiveKitAPISecret:   os.Getenv("LIVEKIT_API_SECRET"),
+		LiveKitAgentName:   envOr("LIVEKIT_AGENT_NAME", "muslimbot"),
+
+		KBBffURL:    envOr("KBBFF_URL", ""),
+		KBBffAPIKey: firstEnv("KBBFF_API_KEY", "KB_BFF_API_KEY", "ORCHESTRATOR_SERVICE_API_KEY"),
 
 		N8NWebhookURL:  os.Getenv("N8N_WEBHOOK_URL"),
 		N8NBaseURL:     envOr("N8N_BASE_URL", "http://n8n:5678"),
 		N8NURLTemplate: os.Getenv("N8N_URL_TEMPLATE"),
 		N8NPublicURL:   envOr("N8N_PUBLIC_URL", "https://workflow.smb.localhost"),
 		WebhookSecret:  os.Getenv("WEBHOOK_SECRET"),
+
+		WebhookQueueSize: envInt("QUEUE_SIZE", 10000),
+		WebhookWorkers:   envInt("WEBHOOK_WORKERS", 0),
 
 		GeminiAPIKey:      os.Getenv("GEMINI_API_KEY"),
 		GeminiRouterModel: envOr("GEMINI_ROUTER_MODEL", "gemini-2.0-flash"),
@@ -140,13 +181,34 @@ func LoadConfig() *Config {
 
 		PlatformBaseDomain: envOr("PLATFORM_BASE_DOMAIN", "smb.localhost"),
 
-		GCPProjectID:   os.Getenv("GCP_PROJECT_ID"),
-		GCPLocation:    envOr("GCP_LOCATION", "us-central1"),
-		GCSBucketName:  os.Getenv("GCS_BUCKET_NAME"),
-		GCPRagCorpusID: os.Getenv("GCP_RAG_CORPUS_ID"),
+		GCPProjectID:     os.Getenv("GCP_PROJECT_ID"),
+		GCPLocation:      envOr("GCP_LOCATION", "us-central1"),
+		GCSBucketName:    os.Getenv("GCS_BUCKET_NAME"),
+		GCPRagCorpusID:   os.Getenv("GCP_RAG_CORPUS_ID"),
+		GCPRagCorpusIDV2: os.Getenv("GCP_RAG_CORPUS_ID_V2"),
+
+		RagTenancyMode:           envOr("RAG_TENANCY_MODE", "shared_metadata"),
+		RagMetadataSchemaVersion: envOr("RAG_METADATA_SCHEMA_VERSION", "2"),
+		RagAllowUnfiltered:       envOr("RAG_ALLOW_UNFILTERED", "false") == "true",
+		KBEventStreamPrefix:      envOr("KB_EVENT_STREAM_PREFIX", "kb:events:"),
+		KBBriefTTLSec:            envInt("KB_BRIEF_TTL_SEC", 86400),
+		KBRetrieveCacheTTLSec:    envInt("KB_RETRIEVE_CACHE_TTL_SEC", 60),
+		KBEventStreamMaxLen:      int64(envInt("KB_EVENT_STREAM_MAXLEN", 5000)),
 
 		RedisURL: envOr("REDIS_URL", "redis://redis-cache:6379/2"),
 	}
+}
+
+// ActiveRagCorpusID returns the corpus used for new ingestion and filtered retrieve.
+// Prefers V2 when set (ADR-0002 cutover).
+func (c *Config) ActiveRagCorpusID() string {
+	if c == nil {
+		return ""
+	}
+	if strings.TrimSpace(c.GCPRagCorpusIDV2) != "" {
+		return strings.TrimSpace(c.GCPRagCorpusIDV2)
+	}
+	return strings.TrimSpace(c.GCPRagCorpusID)
 }
 
 func envOr(key, fallback string) string {

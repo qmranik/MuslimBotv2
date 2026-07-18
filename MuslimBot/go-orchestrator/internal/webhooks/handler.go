@@ -8,7 +8,11 @@ package webhooks
 
 import (
 	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -24,10 +28,21 @@ import (
 type Handler struct {
 	cfg  *config.Config
 	http *http.Client
+	pool *Pool
 }
 
 func NewHandler(cfg *config.Config) *Handler {
-	return &Handler{cfg: cfg, http: &http.Client{Timeout: 10 * time.Second}}
+	h := &Handler{cfg: cfg, http: &http.Client{Timeout: 10 * time.Second}}
+	h.pool = NewPool(cfg.WebhookQueueSize, cfg.WebhookWorkers, h.forward)
+	return h
+}
+
+// Shutdown drains in-flight webhook forwards (graceful shutdown, N4).
+func (h *Handler) Shutdown(ctx context.Context) error {
+	if h.pool == nil {
+		return nil
+	}
+	return h.pool.Shutdown(ctx)
 }
 
 // Ingest handles POST /v1/webhooks/:source.
@@ -44,7 +59,7 @@ func (h *Handler) Ingest(c *gin.Context) {
 		return
 	}
 
-	if !h.verify(c) {
+	if !h.verify(c, body) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid webhook signature/secret"})
 		return
 	}
@@ -54,7 +69,19 @@ func (h *Handler) Ingest(c *gin.Context) {
 
 	tenant := ResolveTenant(source, parsed, c.Query("tenant"), c.GetHeader("X-Tenant-Id"), c.Request.Host)
 
-	// Record for audit / idempotency / later replay.
+	// Route to the tenant's n8n asynchronously via the bounded worker pool —
+	// webhooks must be ack'd fast (N4). A full buffer means we are overloaded:
+	// reply 503 so the caller retries with its own backoff instead of us
+	// spawning unbounded goroutines or exhausting memory.
+	target := h.n8nTarget(tenant, source)
+	if !h.pool.Submit(job{target: target, tenant: tenant, source: source, body: body}) {
+		log.Printf("[webhooks] queue full — shedding %s tenant=%s (503)", source, tenant)
+		c.Header("Retry-After", "5")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "queue_full", "tenant": tenant})
+		return
+	}
+
+	// Record for audit / idempotency / later replay only once accepted.
 	if store.DB != nil {
 		_ = store.DB.Create(&store.EventOutbox{
 			Type:     "webhook." + source,
@@ -65,25 +92,49 @@ func (h *Handler) Ingest(c *gin.Context) {
 		}).Error
 	}
 
-	// Route to the tenant's n8n asynchronously — webhooks must be ack'd fast.
-	target := h.n8nTarget(tenant, source)
-	go h.forward(target, tenant, source, body)
-
 	c.JSON(http.StatusAccepted, gin.H{"status": "accepted", "tenant": tenant, "routed_to": target})
 }
 
-// verify checks the shared secret when one is configured. If WEBHOOK_SECRET is
-// empty (dev), verification is skipped. Real deployments MUST set it and,
-// per-source, upgrade to HMAC signature validation.
-func (h *Handler) verify(c *gin.Context) bool {
-	if h.cfg.WebhookSecret == "" {
+// verify authenticates the caller. When WEBHOOK_SECRET is empty (dev only —
+// MustValidate requires it in production) verification is skipped. Otherwise it
+// accepts either:
+//   - an HMAC-SHA256 signature over the raw body in X-Webhook-Signature or
+//     X-Hub-Signature-256 (optionally "sha256=" prefixed), the preferred path; or
+//   - a shared-secret match in X-Webhook-Secret / ?secret= (fallback for
+//     sources that cannot sign).
+func (h *Handler) verify(c *gin.Context, body []byte) bool {
+	secret := h.cfg.WebhookSecret
+	if secret == "" {
 		return true
 	}
+
+	if sig := firstNonEmpty(c.GetHeader("X-Webhook-Signature"), c.GetHeader("X-Hub-Signature-256")); sig != "" {
+		return verifyHMAC(secret, body, sig)
+	}
+
 	provided := c.GetHeader("X-Webhook-Secret")
 	if provided == "" {
 		provided = c.Query("secret")
 	}
-	return subtle.ConstantTimeCompare([]byte(provided), []byte(h.cfg.WebhookSecret)) == 1
+	return provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(secret)) == 1
+}
+
+// verifyHMAC constant-time compares an HMAC-SHA256 hex signature over body.
+func verifyHMAC(secret string, body []byte, sig string) bool {
+	sig = strings.TrimPrefix(strings.TrimSpace(sig), "sha256=")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write(body)
+	expected := hex.EncodeToString(mac.Sum(nil))
+	return subtle.ConstantTimeCompare([]byte(sig), []byte(expected)) == 1
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (h *Handler) n8nTarget(tenant, source string) string {

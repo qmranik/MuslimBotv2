@@ -1,3 +1,4 @@
+# DEPRECATED: muslimbot-kb-bff removed; use go-orchestrator /v1/kb/*
 services:
   redis-cache:
     image: redis:7-alpine

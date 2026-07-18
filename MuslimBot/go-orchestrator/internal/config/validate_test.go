@@ -18,11 +18,11 @@ func TestMustValidate_ProductionRejectsUnsafe(t *testing.T) {
 
 func TestMustValidate_ProductionPasses(t *testing.T) {
 	c := &Config{
-		Env:               "production",
-		AuthLocalBypass:   false,
-		TrustedProxyCIDRs: "172.20.0.0/16",
-		KBBffAPIKey:       "a-real-key",
-		WebhookSecret:     "a-real-secret",
+		Env:                       "production",
+		AuthLocalBypass:           false,
+		TrustedProxyCIDRs:         "172.20.0.0/16",
+		OrchestratorServiceAPIKey: "a-real-key",
+		WebhookSecret:             "a-real-secret",
 	}
 	if err := c.MustValidate(); err != nil {
 		t.Fatalf("well-formed production config should pass: %v", err)

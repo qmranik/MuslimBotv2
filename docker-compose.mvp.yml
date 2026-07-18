@@ -103,36 +103,6 @@ services:
     networks:
       - smb-net-mvp
 
-  # ─── Muslimbot KB BFF ─────────────────────────────────────────────────
-  muslimbot-kb-bff:
-    build:
-      context: ./Muslimbot-voice-agent
-      dockerfile: Dockerfile
-    image: muslimbot-voice-agent:latest
-    container_name: smb-muslimbot-kb-bff-mvp
-    restart: unless-stopped
-    command: ["uvicorn", "kb_bff.main:app", "--host", "0.0.0.0", "--port", "8787"]
-    env_file:
-      - .env
-    environment:
-      - ERPNEXT_URL=http://frappe-web:8000
-      - REDIS_URL=redis://redis-cache:6379/2
-      - KB_DATA_DIR=/app/data
-      - TENANT_ID=${TENANT_ID:-default}
-      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
-      - LIVEKIT_URL=${LIVEKIT_URL:-}
-      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-}
-      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-}
-      - LIVEKIT_AGENT_NAME=${LIVEKIT_AGENT_NAME:-muslimbot}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173}
-    volumes:
-      - muslimbot-kb-data-mvp:/app/data
-    depends_on:
-      redis-cache:
-        condition: service_started
-    networks:
-      - smb-net-mvp
-
   # ─── Generative UI ────────────────────────────────────────────────────
   generative-ui:
     build:
@@ -153,11 +123,9 @@ services:
       - FRAPPE_SITE_HOST=small.localhost:8000
       - FRAPPE_API_KEY=${FRAPPE_API_KEY:-}
       - FRAPPE_API_SECRET=${FRAPPE_API_SECRET:-}
-      - KB_BFF_API_KEY=${KB_BFF_API_KEY:-change-me-in-production}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     depends_on:
       frappe-web:
-        condition: service_started
-      muslimbot-kb-bff:
         condition: service_started
     networks:
       - smb-net-mvp
@@ -166,7 +134,6 @@ volumes:
   mariadb-data-mvp:
   frappe-sites-mvp:
   frappe-logs-mvp:
-  muslimbot-kb-data-mvp:
 
 networks:
   smb-net-mvp:

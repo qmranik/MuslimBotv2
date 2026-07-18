@@ -1,159 +1,84 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --bg-base: #050505;
-  --bg-gradient-start: #0a0a0a;
-  --bg-gradient-end: #111111;
-  --text-primary: #ffffff;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  
-  --accent-primary: #3b82f6;
-  --accent-glow: rgba(59, 130, 246, 0.5);
-  
-  --glass-bg: rgba(20, 20, 20, 0.2);
-  --glass-border: rgba(255, 255, 255, 0.05);
-  --glass-highlight: rgba(255, 255, 255, 0.08);
-  
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-display: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; /* Apple style typically uses one cohesive sans */
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+  color-scheme: dark;
 }
 
 body {
-  font-family: var(--font-sans);
-  background-color: var(--bg-base);
-  background-image: radial-gradient(circle at top right, var(--bg-gradient-end), var(--bg-gradient-start));
-  color: var(--text-primary);
-  line-height: 1.6;
-  min-height: 100vh;
-  overflow-x: hidden;
+  background-color: #050505; /* Pitch black / dark gray */
+  color: #e2e8f0; /* slate-200 */
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-display);
-  font-weight: 600; /* Apple HIG prefers semi-bold for large titles */
-  letter-spacing: -0.02em; /* Tighter tracking for premium feel */
-  line-height: 1.1;
-  margin-bottom: 1rem;
+html {
+  scroll-behavior: smooth;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Background Grid Pattern */
+.bg-neo-grid {
+  background-size: 24px 24px;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
 }
 
-/* Glassmorphism Utilities */
-.glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: blur(32px);
-  -webkit-backdrop-filter: blur(32px);
-  border: 1px solid var(--glass-border);
-  border-radius: 24px; /* HIG style softer corners */
-  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2), 
-              0 0 1px 0 rgba(255, 255, 255, 0.1) inset; /* Inner glow highlight */
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); /* Smoother apple-like spring */
-  position: relative;
-  overflow: hidden;
-}
-
-.glass-panel::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--glass-highlight), transparent);
-}
-
-.glass-panel:hover {
-  background: rgba(30, 30, 30, 0.3);
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.4), 
-              0 0 1px 0 rgba(255, 255, 255, 0.15) inset,
-              0 0 30px var(--accent-glow);
-  transform: translateY(-2px);
-}
-
-.text-gradient {
-  background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.text-gradient-accent {
-  background: linear-gradient(135deg, #60a5fa 0%, #a855f7 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Base Layout */
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 2rem;
-}
-
-/* Animations */
-@keyframes pulseGlow {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
-  70% { box-shadow: 0 0 0 15px rgba(59, 130, 246, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-}
-
-@keyframes typing {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
-/* Ambient Background Orbs */
-.ambient-orb {
+/* Interactive Flashlight Effect */
+.flashlight-overlay {
+  pointer-events: none;
   position: fixed;
-  border-radius: 50%;
-  filter: blur(80px);
-  z-index: -1;
-  opacity: 0.4;
-  animation: float 20s infinite ease-in-out alternate;
+  inset: 0;
+  z-index: 50;
+  background: radial-gradient(
+    600px circle at var(--x, 50%) var(--y, 50%),
+    rgba(255, 255, 255, 0.08),
+    transparent 40%
+  );
 }
 
-.orb-1 {
-  width: 500px;
-  height: 500px;
-  background: rgba(59, 130, 246, 0.3); /* Blue */
-  top: -10%;
-  left: -10%;
+@layer utilities {
+  .glass-panel {
+    @apply bg-white/[0.02] backdrop-blur-md border border-white/[0.08] rounded-2xl;
+  }
+  
+  .card-aurora {
+    @apply transition-all duration-300;
+  }
+  .card-aurora:hover {
+    @apply border-white/[0.15];
+    box-shadow: inset 0 1px 20px rgba(16, 185, 129, 0.05), 0 8px 30px rgba(0,0,0,0.5); /* subtle emerald top inner glow */
+  }
+
+  .neon-icon {
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+
+  .animate-flow {
+    animation: dash-flow 2s linear infinite;
+  }
 }
 
-.orb-2 {
-  width: 600px;
-  height: 600px;
-  background: rgba(168, 85, 247, 0.2); /* Purple */
-  bottom: -20%;
-  right: -10%;
-  animation-delay: -5s;
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
 }
 
-.orb-3 {
-  width: 400px;
-  height: 400px;
-  background: rgba(34, 197, 94, 0.15); /* Green */
-  top: 40%;
-  left: 60%;
-  animation-delay: -10s;
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 
-@keyframes float {
-  0% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(30px, -50px) scale(1.1); }
-  66% { transform: translate(-20px, 20px) scale(0.9); }
-  100% { transform: translate(0, 0) scale(1); }
+::-webkit-scrollbar-track {
+  background: #050505; 
+}
+
+::-webkit-scrollbar-thumb {
+  background: #222; 
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444; 
 }

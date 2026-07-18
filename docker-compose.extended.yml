@@ -182,8 +182,14 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # G6/P5: real secrets required — the orchestrator's config.MustValidate
       # refuses to boot in production if these are empty or placeholders.
-      KBBFF_API_KEY: ${KBBFF_API_KEY:?set KBBFF_API_KEY (no placeholder)}
+      ORCHESTRATOR_SERVICE_API_KEY: ${ORCHESTRATOR_SERVICE_API_KEY:-${KBBFF_API_KEY:?set ORCHESTRATOR_SERVICE_API_KEY or KBBFF_API_KEY}}
+      WORKLOAD_JWT_SECRET: ${WORKLOAD_JWT_SECRET:-${ORCHESTRATOR_SERVICE_API_KEY:-${KBBFF_API_KEY:?set WORKLOAD_JWT_SECRET}}}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET (no placeholder)}
+      LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:-${LIVEKIT_URL:-ws://livekit:7880}}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-${LIVEKIT_URL:-}}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-muslimbot}
       CHATWOOT_URL: "http://chatwoot:3000"
       CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
       NEXTCLOUD_URL: "https://files.smb.localhost"
@@ -209,7 +215,6 @@ services:
       - "traefik.http.routers.orchestrator.rule=Host(`api.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.orchestrator.entrypoints=websecure"
       - "traefik.http.routers.orchestrator.tls=true"
-      - "traefik.http.routers.orchestrator.middlewares=authentik-forwardauth@file"
       - "traefik.http.services.orchestrator.loadbalancer.server.port=8080"
     networks:
       - platform-net
@@ -221,7 +226,7 @@ services:
   # then build. MCP endpoint is served by the app at /mcp/trypost (bearer auth).
 
   trypost-postgres:
-    image: postgres:18-alpine
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: trypost
@@ -272,6 +277,8 @@ services:
       - "traefik.http.routers.trypost.tls=true"
       # ERP-style: MCP/API paths must stay reachable without ForwardAuth (bearer-token clients).
       - "traefik.http.services.trypost.loadbalancer.server.port=80"
+      # Allow the GenUI pane to frame TryPost (see allow-embed on chatwoot).
+      - "traefik.http.routers.trypost.middlewares=allow-embed"
     networks:
       - platform-net
 
@@ -316,6 +323,9 @@ services:
       - "traefik.http.routers.n8n.entrypoints=websecure"
       - "traefik.http.routers.n8n.tls=true"
       - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+      # Allow the GenUI pane to frame n8n (see allow-embed on chatwoot). n8n also needs
+      # N8N_SECURE_COOKIE / frame settings — see plan §7.
+      - "traefik.http.routers.n8n.middlewares=allow-embed"
     networks:
       - platform-net
 
@@ -326,16 +336,47 @@ services:
       - "traefik.http.routers.chatwoot.entrypoints=websecure"
       - "traefik.http.routers.chatwoot.tls=true"
       - "traefik.http.services.chatwoot.loadbalancer.server.port=3000"
+      # allow-embed: let the GenUI pane (ui.<domain>) frame this app. Strips the app's
+      # X-Frame-Options and pins frame-ancestors. NOTE: this REPLACES any CSP the app
+      # sets — verify per app that no other CSP protection is lost (see plan §7).
+      - "traefik.http.middlewares.allow-embed.headers.customresponseheaders.X-Frame-Options="
+      - "traefik.http.middlewares.allow-embed.headers.contentsecuritypolicy=frame-ancestors 'self' https://ui.${PUBLIC_DOMAIN:-smb.localhost}"
+      - "traefik.http.routers.chatwoot.middlewares=allow-embed"
     networks:
       - platform-net
 
   generative-ui:
+    environment:
+      # Point the pane at the orchestrator + Authentik. NEXT_PUBLIC_* are baked at
+      # build time by Next — ensure they are present when the image is built, not only
+      # at runtime (see plan §8).
+      - "NEXT_PUBLIC_API_URL=https://api.${PUBLIC_DOMAIN:-smb.localhost}"
+      - "NEXT_PUBLIC_AUTHENTIK_URL=https://auth.${PUBLIC_DOMAIN:-smb.localhost}"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.genui.rule=Host(`ui.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.genui.entrypoints=websecure"
       - "traefik.http.routers.genui.tls=true"
+      # Port 3000 matches Dockerfile ENV PORT=3000 (Next.js standalone)
       - "traefik.http.services.genui.loadbalancer.server.port=3000"
+    networks:
+      - platform-net
+
+  # ── Frappe / ERPNext ─────────────────────────────────────────────────────────
+  # Override frappe-web to add Traefik labels for builder sub-domain.
+  frappe-web:
+    labels:
+      - "traefik.enable=true"
+      # Main ERP route (already defined in base compose — we add builder here)
+      - "traefik.http.routers.frappe.rule=Host(`erp.${PUBLIC_DOMAIN:-smb.localhost}`)"
+      - "traefik.http.routers.frappe.entrypoints=websecure"
+      - "traefik.http.routers.frappe.tls=true"
+      - "traefik.http.services.frappe.loadbalancer.server.port=8000"
+      # Frappe Builder route
+      - "traefik.http.routers.frappe-builder.rule=Host(`builder.${PUBLIC_DOMAIN:-smb.localhost}`)"
+      - "traefik.http.routers.frappe-builder.entrypoints=websecure"
+      - "traefik.http.routers.frappe-builder.tls=true"
+      - "traefik.http.services.frappe-builder.loadbalancer.server.port=8000"
     networks:
       - platform-net
 

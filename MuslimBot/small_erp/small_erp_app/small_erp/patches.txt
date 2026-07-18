@@ -1,1 +1,2 @@
 small_erp.patches.v1_0.drop_ai_knowledge_tables
+small_erp.patches.v1_0.create_telemetry_doctypes

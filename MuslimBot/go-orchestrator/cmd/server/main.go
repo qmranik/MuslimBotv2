@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"muslimbot-orchestrator/internal/actions"
 	"muslimbot-orchestrator/internal/ai"
 	"muslimbot-orchestrator/internal/auth"
 	"muslimbot-orchestrator/internal/config"
@@ -24,6 +30,9 @@ import (
 )
 
 func probe(url string) string {
+	if url == "" {
+		return "unconfigured"
+	}
 	client := &http.Client{Timeout: 2 * time.Second}
 	res, err := client.Get(url)
 	if err != nil {
@@ -38,11 +47,18 @@ func healthHandler(cfg *config.Config) gin.HandlerFunc {
 		services := map[string]string{
 			"orchestrator": "online",
 			"frappe":       probe(cfg.FrappeURL),
-			"kb_bff":       probe(cfg.KBBffURL + "/health"),
+			"livekit":      "unconfigured",
 			"vertex_rag":   "unconfigured",
+			"redis":        "unconfigured",
+		}
+		if cfg.LiveKitInternalURL != "" || cfg.LiveKitPublicURL != "" {
+			services["livekit"] = "configured"
 		}
 		if ai.VertexConfigured(cfg) {
 			services["vertex_rag"] = "configured"
+		}
+		if cfg.RedisURL != "" {
+			services["redis"] = "configured"
 		}
 		dbStatus := "unknown"
 		if store.DB != nil {
@@ -72,7 +88,6 @@ func healthHandler(cfg *config.Config) gin.HandlerFunc {
 func main() {
 	cfg := config.LoadConfig()
 
-	// Fail loudly at boot on an unsafe production configuration (G2/G4/G6).
 	if err := cfg.MustValidate(); err != nil {
 		log.Fatalf("[config] %v", err)
 	}
@@ -101,6 +116,12 @@ func main() {
 	workflowsHandler := workflows.NewHandler(cfg)
 	voiceHandler := voice.NewHandler(cfg)
 
+	frappeClient := ai.NewFrappeClient(cfg)
+	kbClient := ai.NewKBClient(cfg)
+	n8nClient := ai.NewN8NClient(cfg)
+	executor := ai.NewExecutor(frappeClient, kbClient, n8nClient)
+	actionsHandler := actions.NewHandler(cfg, executor)
+
 	events.NewDispatcher(cfg).Start()
 
 	v1 := r.Group("/v1")
@@ -114,7 +135,8 @@ func main() {
 			api.GET("/auth/me", auth.MeHandler)
 			api.GET("/voice/token", voiceHandler.GetToken)
 
-			api.Any("/erp/*path", proxy.ErpProxyHandler())
+			api.GET("/erp/*path", proxy.ErpProxyHandler())
+			api.HEAD("/erp/*path", proxy.ErpProxyHandler())
 
 			kb := api.Group("/kb")
 			{
@@ -139,7 +161,6 @@ func main() {
 
 			api.GET("/portals/:app/url", portalsHandler.GetPortalURL)
 
-			// Billable Gemini surface — rate limited per tenant (P8).
 			aiGroup := api.Group("/ai")
 			aiGroup.Use(aiLimiter.Middleware())
 			{
@@ -148,7 +169,6 @@ func main() {
 				aiGroup.POST("/tool/execute", aiBrain.ToolExecuteHandler)
 			}
 
-			// MCP host — direct tool surface (agent uses these via /ai/chat function-calling).
 			mcpGroup := api.Group("/mcp")
 			{
 				mcpGroup.GET("/servers", mcpHandler.GetServers)
@@ -157,19 +177,49 @@ func main() {
 			}
 
 			api.POST("/workflows/trigger", workflowsHandler.Trigger)
-
 			api.POST("/events/ingest", eventsHandler.IngestEvent)
-
 			api.POST("/tenants", tenantsHandler.CreateTenant)
 			api.POST("/tenants/:id/onboard", tenantsHandler.Onboard)
 			api.GET("/tenants/:id/status", tenantsHandler.GetTenantStatus)
 			api.PATCH("/tenants/:id/features", tenantsHandler.UpdateFeatures)
-
 			api.GET("/platform/services", healthHandler(cfg))
+		}
+
+		// LiveKit worker surface — JWT-bound tenant/session/scopes.
+		agent := v1.Group("/agent")
+		agent.Use(auth.WorkloadMiddleware(cfg))
+		{
+			agent.GET("/tools", actionsHandler.ListTools)
+			agent.POST("/kb/retrieve", kbHandler.AgentRetrieveHandler)
+			agent.GET("/kb/voice-brief", kbHandler.AgentVoiceBriefHandler)
+			agent.POST("/tool-actions", actionsHandler.Prepare)
+			agent.POST("/tool-actions/:id/confirm", actionsHandler.Confirm)
+			agent.GET("/tool-actions/:id", actionsHandler.Get)
 		}
 	}
 
-	log.Printf("Starting liteERP Platform Orchestrator on port :%s\n", cfg.Port)
-	log.Println("Auth: Authentik forward-auth via Traefik (X-authentik-* headers)")
-	r.Run(":" + cfg.Port)
+	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
+
+	go func() {
+		log.Printf("Starting liteERP Platform Orchestrator on port :%s\n", cfg.Port)
+		log.Println("Auth: Authentik forward-auth via Traefik; workers via workload JWT")
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server error: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down — draining connections and webhook queue...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("http shutdown: %v", err)
+	}
+	if err := webhooksHandler.Shutdown(ctx); err != nil {
+		log.Printf("webhook pool drain: %v", err)
+	}
+	log.Println("Shutdown complete.")
 }

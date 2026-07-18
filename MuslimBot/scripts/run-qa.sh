@@ -39,8 +39,8 @@ FRAPPE_SITE_HOST=small.localhost:8000
 FRAPPE_API_KEY=$API_KEY
 FRAPPE_API_SECRET=$API_SECRET
 VITE_GEMINI_API_KEY=mock-key
-KB_BFF_URL=http://localhost:8787
-KB_BFF_API_KEY=change-me-in-production
+GO_ORCHESTRATOR_URL=http://localhost:8080
+ORCHESTRATOR_SERVICE_API_KEY=change-me-in-production
 VITE_WS_ERP_URL=http://localhost:8000/ops
 VITE_WS_N8N_URL=http://localhost:5678
 VITE_WS_CHATWOOT_URL=http://localhost:3000
@@ -60,8 +60,8 @@ export JWT_SECRET=dev-jwt-secret-change-me
 export FRAPPE_URL=http://localhost:8000
 export FRAPPE_API_KEY=$API_KEY
 export FRAPPE_API_SECRET=$API_SECRET
-export KBBFF_URL=http://localhost:8787
-export KBBFF_API_KEY=change-me-in-production
+export GO_ORCHESTRATOR_URL=http://localhost:8080
+export ORCHESTRATOR_SERVICE_API_KEY=change-me-in-production
 export GEMINI_API_KEY=mock-key
 go mod tidy
 go run cmd/server/main.go > orchestrator.log 2>&1 &

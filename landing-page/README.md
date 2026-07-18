@@ -1,16 +1,38 @@
-# React + Vite
+# MuslimBot OS - Landing Page
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This repository contains the front-end marketing site for **MuslimBot OS**.
 
-Currently, two official plugins are available:
+MuslimBot is the open-source, AI-first sovereign command center uniting ERP (Frappe), support (Chatwoot), marketing (TryPost), and workflows (n8n) for growing SMEs. It features a dynamically rendering Generative UI powered by a hyper-fast Go orchestrator.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Tech Stack
+- React
+- Vite
+- Tailwind CSS
+- Lucide Icons
+- Framer Motion
 
-## React Compiler
+## Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Install dependencies:
+```bash
+npm install
+```
 
-## Expanding the Oxlint configuration
+Start the development server:
+```bash
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Build for production:
+```bash
+npm run build
+```
+
+## Architecture Notes
+The landing page relies heavily on an "Agentic Neo" design system:
+- **`src/components/sections/`**: Houses all major page blocks (Hero, Use Cases, Ecosystem, Architecture, etc.).
+- **`src/components/MobileNav.jsx` & `FloatingNav.jsx`**: Handles the floating "tool box" navigation scheme.
+- **Glassmorphism**: Relies on Tailwind backdrop filters (`backdrop-blur-md`) and subtle white borders (`border-white/10`).
+
+## Sovereignty by Design
+Built by the liteERP team. All systems mentioned (Frappe, Chatwoot, n8n, TryPost, Traefik, Authentik) are open-source and deployable via Docker Compose for 100% data sovereignty.

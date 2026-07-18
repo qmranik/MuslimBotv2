@@ -1,189 +1,346 @@
+"""
+Muslimbot LiveKit voice worker — LiveKit Agents 1.x + Gemini Live.
+
+This package is LiveKit-only. Knowledge ingestion, chat, voice-session minting,
+and voice briefs are owned by the Go orchestrator. All ERP/KB tool calls go
+through /v1/agent/* using a session-bound workload JWT from dispatch metadata.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
-import datetime
+import os
+import sys
+from typing import Any, Optional
+
 from dotenv import load_dotenv
-from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, mcp, llm
-from livekit.agents import AgentSession
+from livekit.agents import (
+    Agent,
+    AgentSession,
+    AutoSubscribe,
+    ConversationItemAddedEvent,
+    JobContext,
+    WorkerOptions,
+    cli,
+    function_tool,
+)
 from livekit.plugins import google
-from services.erp_client import erp_call, erp_create_doc, erp_get_list, erp_submit_doc
+
+from services.config import (
+    AGENT_TIMEZONE,
+    GEMINI_VOICE_MODEL,
+    GO_ORCHESTRATOR_URL,
+    LIVEKIT_AGENT_NAME,
+    TENANT_ID,
+)
+from services.memory import append_conversation_memory, get_conversation_memory
+from services.orchestrator_client import OrchestratorClient
+from services.tool_service import (
+    confirm_write_tool,
+    prepare_write_tool,
+    run_read_tool,
+    search_knowledge,
+)
 
 load_dotenv()
-logger = logging.getLogger("voice-agent")
-logger.setLevel(logging.INFO)
 
-class ERPTools(llm.FunctionContext):
-    @llm.ai_callable(description="Check stock level for a specific item. Returns available quantity across warehouses.")
-    async def check_stock(self, item_name: str) -> str:
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("muslimbot")
+
+REQUIRED_ENVS = [
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "GOOGLE_API_KEY",
+]
+missing_envs = [env for env in REQUIRED_ENVS if not os.getenv(env)]
+if missing_envs:
+    logger.critical("FATAL: Missing required environment variables: %s", ", ".join(missing_envs))
+    sys.exit(1)
+
+
+SYSTEM_INSTRUCTIONS = f"""You are Muslimbot, a highly efficient enterprise voice assistant for Small ERP.
+You help users manage their business through natural conversation.
+
+READ operations (instant):
+- Search products/items and check stock
+- Search the knowledge base for policies and FAQs (search_knowledge_base)
+- Look up customers, orders, receivables, and sales summaries
+- Check system status
+
+WRITE operations (ALWAYS prepare first, then ask for confirmation):
+- Create orders, customers, items, stock entries, payments
+- Trigger workflows / notifications
+When a write tool returns an Action ID, read the summary aloud and ask the user to say yes or no.
+Only call confirm_pending_action after an explicit yes/no. Never invent Action IDs.
+
+Communication style:
+- Be concise and professional. Speak naturally.
+- Never output raw JSON or markdown.
+- Use the local currency symbol (₹) for amounts.
+- Current timezone: {AGENT_TIMEZONE}
+"""
+
+
+def _parse_dispatch_context(ctx: JobContext) -> dict[str, Any]:
+    """Extract trusted tenant/session/workload token from LiveKit job/room metadata."""
+    raw_candidates: list[str] = []
+    job = getattr(ctx, "job", None)
+    if job is not None:
+        meta = getattr(job, "metadata", None) or ""
+        if meta:
+            raw_candidates.append(meta)
+    room_meta = getattr(ctx.room, "metadata", None) or ""
+    if room_meta:
+        raw_candidates.append(room_meta)
+
+    for raw in raw_candidates:
         try:
-            result = await erp_call("small_erp.api.inventory.get_item_detail", {"item_code": item_name})
-            if isinstance(result, dict) and "error" not in result:
-                levels = result.get("levels", result)
-                if isinstance(levels, list):
-                    lines = [
-                        f"- {l.get('warehouse', 'Default')}: {l.get('actual_qty', 0)} {l.get('stock_uom', 'units')}"
-                        for l in levels
-                    ]
-                    return f"Stock for {item_name}:\n" + "\n".join(lines)
-                return f"Stock info: {json.dumps(result)}"
+            data = json.loads(raw)
+            if isinstance(data, dict) and data.get("workload_token"):
+                return data
+        except json.JSONDecodeError:
+            logger.warning("Ignoring non-JSON dispatch metadata")
+    return {}
 
-            bins = await erp_get_list(
-                "Bin",
-                filters={"item_code": item_name},
-                fields=["warehouse", "actual_qty", "stock_uom"],
-            )
-            if bins:
-                lines = [f"- {b['warehouse']}: {b['actual_qty']} {b.get('stock_uom', '')}" for b in bins]
-                return f"Stock for {item_name}:\n" + "\n".join(lines)
-            return f"No stock data found for '{item_name}'."
-        except Exception as exc:
-            return f"Error checking stock: {exc}"
 
-    @llm.ai_callable(description="Search for a customer by name or phone number.")
-    async def search_customer(self, query: str) -> str:
-        customers = await erp_get_list(
-            "Customer",
-            filters={"customer_name": ["like", f"%{query}%"]},
-            fields=["name", "customer_name", "mobile_no", "customer_group"],
-            limit=5,
+class MuslimbotAgent(Agent):
+    """Voice agent whose tools call the Go orchestrator exclusively."""
+
+    def __init__(
+        self,
+        *,
+        tenant_id: str,
+        session_id: str,
+        instructions: str,
+        client: OrchestratorClient,
+    ) -> None:
+        super().__init__(instructions=instructions)
+        self.tenant_id = tenant_id
+        self.session_id = session_id
+        self.client = client
+        self.participant_identity = "unknown"
+        self._pending_action_id: Optional[str] = None
+
+    @function_tool(description="Search inventory items by name or description.")
+    async def search_items(self, query: str, limit: int = 5) -> str:
+        return await run_read_tool(self.client, "search_items", query=query, limit=limit)
+
+    @function_tool(description="Check stock levels for an item.")
+    async def check_stock(self, item_name: str) -> str:
+        return await run_read_tool(self.client, "check_stock", item_name=item_name)
+
+    @function_tool(description="Get today's sales summary.")
+    async def sales_summary(self) -> str:
+        return await run_read_tool(self.client, "sales_summary")
+
+    @function_tool(description="Get recent sales orders/invoices.")
+    async def get_recent_orders(self, status: str = "", customer: str = "", limit: int = 5) -> str:
+        return await run_read_tool(
+            self.client, "get_recent_orders", status=status, customer=customer, limit=limit
         )
-        if not customers:
-            return f"No customers found matching '{query}'."
 
-        lines = [
-            f"- {c.get('customer_name', c['name'])} (Group: {c.get('customer_group', 'N/A')}, Mobile: {c.get('mobile_no', 'N/A')})"
-            for c in customers
-        ]
-        return "Customers found:\n" + "\n".join(lines)
+    @function_tool(description="Search customers by name or phone.")
+    async def search_customer(self, query: str) -> str:
+        return await run_read_tool(self.client, "search_customer", query=query)
 
-    @llm.ai_callable(description="Create a sales invoice (order) for a customer. Provide the customer name and list of items with quantities.")
+    @function_tool(description="Get a customer's purchase history.")
+    async def customer_history(self, customer_name: str) -> str:
+        return await run_read_tool(self.client, "customer_history", customer_name=customer_name)
+
+    @function_tool(description="Get outstanding receivables.")
+    async def get_receivables(self) -> str:
+        return await run_read_tool(self.client, "get_receivables")
+
+    @function_tool(description="List low stock alerts.")
+    async def low_stock_alerts(self, limit: int = 20) -> str:
+        return await run_read_tool(self.client, "low_stock_alerts", limit=limit)
+
+    @function_tool(description="Search the organization knowledge base for policies and FAQs.")
+    async def search_knowledge_base(self, query: str) -> str:
+        return await search_knowledge(self.client, query, session_id=self.session_id)
+
+    @function_tool(description="Ask a complex business question via automation.")
+    async def ask_business_ai(self, query: str) -> str:
+        return await run_read_tool(self.client, "ask_business_ai", query=query)
+
+    @function_tool(description="Get current time and system status.")
+    async def system_status(self) -> str:
+        return await run_read_tool(self.client, "system_status")
+
+    @function_tool(description="Prepare creating a sales order. Requires later confirmation.")
     async def create_order(self, customer: str, items: str, is_pos: bool = False) -> str:
         try:
             item_list = json.loads(items) if isinstance(items, str) else items
         except json.JSONDecodeError:
-            return "Invalid items format. Provide JSON array like: [{'item_code':'ITM001','qty':2}]"
-
-        if not item_list:
-            return "No items provided. Please specify at least one item with item_code and qty."
-
-        invoice = {
-            "customer": customer,
-            "posting_date": datetime.date.today().isoformat(),
-            "due_date": datetime.date.today().isoformat(),
-            "is_pos": 1 if is_pos else 0,
-            "update_stock": 1 if is_pos else 0,
-            "items": [{"item_code": i.get("item_code", i.get("name", "")), "qty": i.get("qty", 1)} for i in item_list],
-        }
-        if is_pos:
-            invoice["payments"] = [{"mode_of_payment": "Cash", "amount": 0}]
-
-        result = await erp_create_doc("Sales Invoice", invoice)
-        if isinstance(result, dict) and "error" in result:
-            return f"Failed to create order: {result['error']}"
-
-        inv_name = result.get("name", "Unknown")
-        total = result.get("grand_total", result.get("total", 0))
-
-        if is_pos:
-            submit_result = await erp_submit_doc("Sales Invoice", inv_name)
-            if isinstance(submit_result, dict) and "error" in submit_result:
-                return f"Order {inv_name} created (₹{total}) but failed to submit: {submit_result['error']}"
-            return f"POS order {inv_name} completed! Total: ₹{total}. Payment recorded."
-
-        return f"Order {inv_name} created as draft. Total: ₹{total}. Say 'submit order {inv_name}' to finalize."
-
-    @llm.ai_callable(description="Create a new customer profile.")
-    async def create_customer(self, customer_name: str, mobile_no: str = "", customer_group: str = "Individual") -> str:
-        doc = {
-            "customer_name": customer_name,
-            "customer_type": "Individual",
-            "customer_group": customer_group,
-            "mobile_no": mobile_no,
-        }
-        result = await erp_create_doc("Customer", doc)
-        if isinstance(result, dict) and "error" in result:
-            return f"Failed to create customer: {result['error']}"
-        return f"Customer {customer_name} created successfully with ID {result.get('name', 'Unknown')}."
-
-async def entrypoint(ctx: JobContext):
-    logger.info(f"Connecting to room {ctx.room.name}")
-    
-    # Initialize native ERP tools
-    erp_fnc_ctx = ERPTools()
-    tools = []
-    
-    try:
-        # 1. Connect to Knowledge Base (Standard IO execution)
-        kb_mcp = mcp.MCPToolset(
-            id="knowledge-base",
-            mcp_server=mcp.MCPServerStdio(
-                command="npx",
-                args=["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:pass@localhost/nextcloud_vectors"]
-            )
+            return "Invalid items format. Provide a JSON array like [{'item_code':'ITM001','qty':2}]."
+        result = await prepare_write_tool(
+            self.client, "create_order", customer=customer, items=item_list, is_pos=is_pos
         )
-        tools.append(kb_mcp)
-    except Exception as e:
-        logger.warning(f"Failed to initialize knowledge-base MCP: {e}")
+        self._capture_pending(result)
+        return result
 
-    try:
-        # 2. Connect to Vertex AI RAG Engine (Remote HTTP endpoint via Orchestrator)
-        vertex_rag_mcp = mcp.MCPToolset(
-            id="vertex-rag",
-            mcp_server=mcp.MCPServerHTTP(
-                url="http://localhost:8080/mcp/vertex-rag",
-                transport_type="streamable_http"
-            )
+    @function_tool(description="Prepare recording a payment. Requires later confirmation.")
+    async def record_payment(
+        self, invoice_name: str, amount: float, mode_of_payment: str = "Cash"
+    ) -> str:
+        result = await prepare_write_tool(
+            self.client,
+            "record_payment",
+            invoice_name=invoice_name,
+            amount=amount,
+            mode_of_payment=mode_of_payment,
         )
-        tools.append(vertex_rag_mcp)
-    except Exception as e:
-        logger.warning(f"Failed to initialize vertex-rag MCP: {e}")
+        self._capture_pending(result)
+        return result
 
-    # 3. Connect to LiveKit Room and start listening
+    @function_tool(description="Prepare creating a customer. Requires later confirmation.")
+    async def create_customer(
+        self, customer_name: str, mobile_no: str = "", customer_group: str = "Individual"
+    ) -> str:
+        result = await prepare_write_tool(
+            self.client,
+            "create_customer",
+            customer_name=customer_name,
+            mobile_no=mobile_no,
+            customer_group=customer_group,
+        )
+        self._capture_pending(result)
+        return result
+
+    @function_tool(description="Prepare creating an inventory item. Requires later confirmation.")
+    async def create_item(self, item_name: str, rate: float, item_group: str = "Products") -> str:
+        result = await prepare_write_tool(
+            self.client, "create_item", item_name=item_name, rate=rate, item_group=item_group
+        )
+        self._capture_pending(result)
+        return result
+
+    @function_tool(description="Prepare adding stock. Requires later confirmation.")
+    async def add_stock(self, item_code: str, qty: float, warehouse: str = "Stores - LDI") -> str:
+        result = await prepare_write_tool(
+            self.client, "add_stock", item_code=item_code, qty=qty, warehouse=warehouse
+        )
+        self._capture_pending(result)
+        return result
+
+    @function_tool(description="Approve or reject the pending write Action ID after user confirmation.")
+    async def confirm_pending_action(
+        self, approve: bool, action_id: str = "", transcript: str = ""
+    ) -> str:
+        target = (action_id or self._pending_action_id or "").strip()
+        if not target:
+            return "There is no pending write action to confirm."
+        result = await confirm_write_tool(self.client, target, approve=approve, transcript=transcript)
+        if approve:
+            self._pending_action_id = None
+        return result
+
+    def _capture_pending(self, spoken: str) -> None:
+        marker = "Action ID "
+        if marker in spoken:
+            self._pending_action_id = spoken.split(marker, 1)[1].split(".", 1)[0].strip()
+
+
+async def entrypoint(ctx: JobContext) -> None:
+    logger.info("Connecting to room %s", ctx.room.name)
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
-    
-    # 4. Extract Room Metadata for Context Injection
-    source_context = ""
-    if ctx.room.metadata:
-        try:
-            metadata = json.loads(ctx.room.metadata)
-            source = metadata.get("source", "Unknown")
-            user_id = metadata.get("user_id", "Unknown")
-            source_context = f"\n\nUSER CONTEXT:\n- The user is calling from: {source}\n- User ID: {user_id}\nUse this context to personalize your greeting and know their origin."
-            logger.info(f"Loaded room metadata: source={source}, user_id={user_id}")
-        except json.JSONDecodeError:
-            logger.error(f"Failed to decode room metadata as JSON. Raw metadata: {ctx.room.metadata}")
 
-    # 5. Initialize Gemini Real-Time with Tools
+    dispatch = _parse_dispatch_context(ctx)
+    tenant_id = str(dispatch.get("tenant_id") or TENANT_ID)
+    session_id = str(dispatch.get("session_id") or ctx.room.name)
+    workload_token = str(dispatch.get("workload_token") or "")
+    if not workload_token:
+        logger.error(
+            "No workload_token in dispatch metadata; refusing session. "
+            "Ensure Go /v1/kb/voice/session dispatched this room."
+        )
+        return
+
+    client = OrchestratorClient(workload_token=workload_token, base_url=GO_ORCHESTRATOR_URL)
+
+    voice_context = ""
+    try:
+        brief = await client.voice_brief()
+        voice_context = str(brief.get("context") or "")
+    except Exception as exc:
+        logger.warning("Failed to load voice brief: %s", exc)
+
+    participant_identity = (
+        next(iter(ctx.room.remote_participants.values())).identity
+        if ctx.room.remote_participants
+        else "unknown"
+    )
+    try:
+        memory_turns = await get_conversation_memory(tenant_id, session_id)
+        if memory_turns:
+            voice_context += "\n\nRECENT CONVERSATION HISTORY:\n"
+            for turn in memory_turns:
+                voice_context += f"{turn['role'].upper()}: {turn['text']}\n"
+    except Exception as exc:
+        logger.warning("Failed to load conversation memory: %s", exc)
+
+    instructions = SYSTEM_INSTRUCTIONS
+    if voice_context.strip():
+        instructions += (
+            "\n\nORGANIZATION KNOWLEDGE (use tools for live stock/orders):\n"
+            f"{voice_context.strip()}\n"
+        )
+
+    agent = MuslimbotAgent(
+        tenant_id=tenant_id,
+        session_id=session_id,
+        instructions=instructions,
+        client=client,
+    )
+    agent.participant_identity = participant_identity
+
     session = AgentSession(
-        llm=google.realtime.RealtimeModel(
-            model="gemini-2.5-flash",
+        llm=google.beta.realtime.RealtimeModel(
+            model=GEMINI_VOICE_MODEL,
             voice="Puck",
-            temperature=0.6,
-            instructions=(
-                "You are the MuslimBot Voice Assistant, a production-grade, highly professional Customer Support Agent. "
-                "Your primary goal is to assist customers seamlessly, place orders, and provide highly accurate information based exclusively on your knowledge base. "
-                "You have direct access to the company's Knowledge Base and ERP System via your tools. "
-                "CRITICAL WORKFLOWS: "
-                "1. PROACTIVE GREETING: When the conversation starts, proactively greet the user, acknowledging their source (e.g., 'Thank you for calling from our website'). "
-                "2. CONTEXTUAL KNOWLEDGE RETRIEVAL: Always use the 'knowledge-base' and 'vertex-rag' tools to retrieve context before answering any questions about company policies, SOPs, products, or guidelines. Never guess or hallucinate. Base your responses strictly on the retrieved knowledge. "
-                "3. CHECKING INVENTORY & TAKING ORDERS: Always verify item stock using the 'erp-system' before confirming an order. "
-                "If an item is in stock, politely ask for the required information to complete the order (e.g., Shipping Address, Contact Number). "
-                "4. CUSTOMER ONBOARDING: If the caller is a new customer, use the 'erp-system' to gracefully collect their details and create a new Customer Record, noting their source (e.g., Website Voice Call, Mobile). "
-                "5. SUPPORT ESCALATION: If a user has a complex issue, sounds frustrated, or asks about a helpdesk ticket, use the 'erp-system' to fetch or escalate tickets, ensuring the customer feels heard and supported. "
-                "TONE AND ETIQUETTE: "
-                "- Be immensely polite, grateful, and professional at all times. Use phrases like 'Thank you for reaching out', 'I would be happy to help with that', and 'I appreciate your patience.' "
-                "- Keep your answers conversational, concise, and empathetic. Do not sound robotic. "
-                "- Be proactive in asking clarifying questions to fulfill orders or solve problems. "
-                f"{source_context}"
-            )
+            temperature=0.7,
         ),
-        fnc_ctx=erp_fnc_ctx,
-        tools=tools
     )
 
-    logger.info(f"Session starting for room: {ctx.room.name}. Active MCP Tools: {len(tools)}, Native Tools loaded.")
-    
-    await session.start(room=ctx.room)
+    @session.on("conversation_item_added")
+    def _on_item(ev: ConversationItemAddedEvent) -> None:
+        item = getattr(ev, "item", None)
+        if item is None:
+            return
+        role = getattr(item, "role", "")
+        text = getattr(item, "text_content", None) or ""
+        if role in ("user", "assistant") and text:
+            mapped = "user" if role == "user" else "agent"
+            asyncio.create_task(append_conversation_memory(tenant_id, session_id, mapped, text))
+
+    @ctx.room.on("participant_disconnected")
+    def _on_disconnect(participant) -> None:  # type: ignore[no-untyped-def]
+        logger.info("Participant %s disconnected; closing orchestrator client", participant.identity)
+        asyncio.create_task(client.close())
+
+    try:
+        await session.start(agent=agent, room=ctx.room)
+        await session.generate_reply(
+            instructions=(
+                "Greet the user briefly: say you are Muslimbot, their business assistant, "
+                "and that you can help search products, check stock, review orders, look up "
+                "customers, or answer knowledge-base questions. Then ask how you can help."
+            )
+        )
+    finally:
+        await client.close()
+
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            agent_name=LIVEKIT_AGENT_NAME or "muslimbot",
+        )
+    )

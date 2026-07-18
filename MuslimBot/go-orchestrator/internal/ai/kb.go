@@ -24,6 +24,7 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"golang.org/x/oauth2/google"
+	authpkg "muslimbot-orchestrator/internal/auth"
 	"muslimbot-orchestrator/internal/config"
 	"muslimbot-orchestrator/internal/knowledge"
 	"muslimbot-orchestrator/internal/store"
@@ -69,9 +70,29 @@ func getRedisClient(cfg *config.Config) *redis.Client {
 // --- Route Handlers ---
 
 func (h *KBHandler) HealthHandler(c *gin.Context) {
+	tenantID, _ := c.Get("tenant_id")
+	tid, _ := tenantID.(string)
+	if tid == "" {
+		tid = "default"
+	}
+	indexed := 0
+	if store.DB != nil {
+		var count int64
+		_ = store.DB.Model(&store.KBSource{}).
+			Where("tenant_id = ? AND status = ? AND deleted_at IS NULL", tid, "indexed").
+			Count(&count).Error
+		indexed = int(count)
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"status":          "ok",
-		"indexed_sources": 0,
+		"status":                 "ok",
+		"indexed_sources":        indexed,
+		"tenant_id":              tid,
+		"vertex_rag":             knowledge.VertexConfigured(h.config),
+		"rag_tenancy_mode":       h.config.RagTenancyMode,
+		"rag_corpus_id":          h.config.ActiveRagCorpusID(),
+		"filtered_retrieval":     !h.config.RagAllowUnfiltered && knowledge.VertexConfigured(h.config),
+		"kb_generation":          knowledge.CurrentGeneration(tid),
+		"metadata_schema_version": h.config.RagMetadataSchemaVersion,
 	})
 }
 
@@ -87,7 +108,7 @@ func (h *KBHandler) ListSourcesHandler(c *gin.Context) {
 
 	var sources []store.KBSource
 	if store.DB != nil {
-		if err := store.DB.Where("tenant_id = ?", tid).Order("id desc").Find(&sources).Error; err != nil {
+		if err := store.DB.Where("tenant_id = ? AND deleted_at IS NULL", tid).Order("id desc").Find(&sources).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -103,27 +124,61 @@ func (h *KBHandler) ListSourcesHandler(c *gin.Context) {
 
 func (h *KBHandler) GetSourceHandler(c *gin.Context) {
 	sourceID := c.Param("source_id")
+	tenantID, _ := c.Get("tenant_id")
+	tid, _ := tenantID.(string)
+	if tid == "" {
+		tid = "default"
+	}
+	groupsAny, _ := c.Get("user_groups")
+	groups, _ := groupsAny.([]string)
+	staff := knowledge.IsStaff(groups)
+
 	var source store.KBSource
-	if store.DB != nil {
-		if err := store.DB.First(&source, "id = ?", sourceID).Error; err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Source not found"})
-			return
-		}
+	if store.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database unavailable"})
+		return
+	}
+	if err := store.DB.Where("id = ? AND tenant_id = ?", sourceID, tid).First(&source).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Source not found"})
+		return
+	}
+	if !staff && source.Visibility == "private" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Source not visible"})
+		return
 	}
 	c.JSON(http.StatusOK, source)
 }
 
 func (h *KBHandler) DeleteSourceHandler(c *gin.Context) {
 	sourceID := c.Param("source_id")
-	var source store.KBSource
-	if store.DB != nil {
-		if err := store.DB.First(&source, "id = ?", sourceID).Error; err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Source not found"})
-			return
-		}
+	tenantID, _ := c.Get("tenant_id")
+	tid, _ := tenantID.(string)
+	if tid == "" {
+		tid = "default"
+	}
+	groupsAny, _ := c.Get("user_groups")
+	groups, _ := groupsAny.([]string)
+	if !knowledge.IsStaff(groups) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Staff role required to delete sources"})
+		return
 	}
 
-	// Delete from Vertex AI RAG Corpus if registered
+	var source store.KBSource
+	if store.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database unavailable"})
+		return
+	}
+	if err := store.DB.Where("id = ? AND tenant_id = ?", sourceID, tid).First(&source).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Source not found"})
+		return
+	}
+
+	if err := knowledge.SoftDeleteSource(h.config, &source); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Vertex delete is best-effort after soft-delete + generation bump.
 	if source.RagFileID != "" && h.config.GCPProjectID != "" {
 		go func(ragFileID string) {
 			ctx := context.Background()
@@ -134,9 +189,7 @@ func (h *KBHandler) DeleteSourceHandler(c *gin.Context) {
 			}
 			defer client.Close()
 
-			req := &aiplatformpb.DeleteRagFileRequest{
-				Name: ragFileID,
-			}
+			req := &aiplatformpb.DeleteRagFileRequest{Name: ragFileID}
 			op, err := client.DeleteRagFile(ctx, req)
 			if err != nil {
 				log.Printf("[kb/delete] DeleteRagFile failed: %v", err)
@@ -150,19 +203,51 @@ func (h *KBHandler) DeleteSourceHandler(c *gin.Context) {
 		}(source.RagFileID)
 	}
 
-	if store.DB != nil {
-		if err := store.DB.Delete(&source).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{"deleted": sourceID})
+	c.JSON(http.StatusOK, gin.H{
+		"deleted":       sourceID,
+		"tenant_id":     tid,
+		"kb_generation": knowledge.CurrentGeneration(tid),
+	})
 }
 
 func (h *KBHandler) SyncSourceHandler(c *gin.Context) {
 	sourceID := c.Param("source_id")
-	c.JSON(http.StatusOK, gin.H{"source": sourceID, "status": "queued"})
+	tenantID, _ := c.Get("tenant_id")
+	tid, _ := tenantID.(string)
+	if tid == "" {
+		tid = "default"
+	}
+	groupsAny, _ := c.Get("user_groups")
+	groups, _ := groupsAny.([]string)
+	if !knowledge.IsStaff(groups) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Staff role required to sync sources"})
+		return
+	}
+	if store.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database unavailable"})
+		return
+	}
+	var source store.KBSource
+	if err := store.DB.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", sourceID, tid).First(&source).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Source not found"})
+		return
+	}
+	source.Revision++
+	source.Status = "queued"
+	source.UpdatedAt = time.Now().UTC()
+	_ = store.DB.Save(&source).Error
+	job, err := knowledge.CreateIngestionJob(tid, sourceID, source.Revision)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"source":    sourceID,
+		"status":    "queued",
+		"job_id":    job.ID,
+		"revision":  source.Revision,
+		"tenant_id": tid,
+	})
 }
 
 func (h *KBHandler) ClassifyURLHandler(c *gin.Context) {
@@ -497,33 +582,62 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 		return
 	}
 
-	livekitURL := os.Getenv("LIVEKIT_URL")
-	apiKey := os.Getenv("LIVEKIT_API_KEY")
-	apiSecret := os.Getenv("LIVEKIT_API_SECRET")
-	agentName := os.Getenv("LIVEKIT_AGENT_NAME")
-	if agentName == "" {
-		agentName = "muslimbot"
+	tenantID, _ := c.Get("tenant_id")
+	tid, _ := tenantID.(string)
+	if tid == "" {
+		tid = "default"
 	}
+	userEmail, _ := c.Get("user_email")
+	email, _ := userEmail.(string)
+	userName, _ := c.Get("user_name")
+	uname, _ := userName.(string)
 
-	if livekitURL == "" || apiKey == "" || apiSecret == "" {
+	livekitInternal := firstNonEmpty(h.config.LiveKitInternalURL, os.Getenv("LIVEKIT_URL"))
+	livekitPublic := firstNonEmpty(h.config.LiveKitPublicURL, livekitInternal)
+	apiKey := firstNonEmpty(h.config.LiveKitAPIKey, os.Getenv("LIVEKIT_API_KEY"))
+	apiSecret := firstNonEmpty(h.config.LiveKitAPISecret, os.Getenv("LIVEKIT_API_SECRET"))
+	agentName := firstNonEmpty(h.config.LiveKitAgentName, os.Getenv("LIVEKIT_AGENT_NAME"), "muslimbot")
+
+	if livekitInternal == "" || apiKey == "" || apiSecret == "" {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "LiveKit is not configured",
-			"details": "Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.",
+			"details": "Set LIVEKIT_INTERNAL_URL/LIVEKIT_PUBLIC_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.",
 		})
 		return
 	}
 
-	roomName := strings.TrimSpace(req.RoomName)
-	if roomName == "" {
-		roomName = fmt.Sprintf("muslimbot-%s", GenerateKBSID()[:10])
+	// Always mint a unique room — never allow callers to join arbitrary existing rooms.
+	roomName := fmt.Sprintf("muslimbot-%s", GenerateKBSID())
+	if strings.TrimSpace(req.RoomName) != "" {
+		// Allow optional suffix only; keep unique prefix to avoid collisions.
+		roomName = fmt.Sprintf("muslimbot-%s-%s", GenerateKBSID()[:8], sanitizeRoomSuffix(req.RoomName))
 	}
+	sessionID := "VS-" + GenerateKBSID()
 	participantIdentity := fmt.Sprintf("user-%s", GenerateKBSID()[:8])
 	participantName := strings.TrimSpace(req.ParticipantName)
 	if participantName == "" {
-		participantName = "Knowledge Hub User"
+		participantName = firstNonEmpty(uname, "Knowledge Hub User")
 	}
 
-	// Generate Join Token
+	scopes := authpkg.DefaultVoiceScopes()
+	workloadToken, workloadJTI, err := authpkg.MintWorkloadToken(
+		h.config, tid, roomName, sessionID, email, participantName, scopes, time.Hour,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mint worker credential", "details": err.Error()})
+		return
+	}
+
+	metadata, _ := json.Marshal(map[string]any{
+		"tenant_id":      tid,
+		"session_id":     sessionID,
+		"user_email":     email,
+		"user_name":      participantName,
+		"scopes":         scopes,
+		"workload_token": workloadToken,
+	})
+
+	// Generate Join Token for the browser participant.
 	at := auth.NewAccessToken(apiKey, apiSecret)
 	grant := &auth.VideoGrant{
 		RoomJoin:     true,
@@ -534,6 +648,7 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 	at.SetVideoGrant(grant).
 		SetIdentity(participantIdentity).
 		SetName(participantName).
+		SetMetadata(string(metadata)).
 		SetValidFor(time.Hour)
 
 	token, err := at.ToJWT()
@@ -542,12 +657,10 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 		return
 	}
 
-	// Dispatch agent via Twirp REST POST
-	httpURL := strings.Replace(livekitURL, "wss://", "https://", 1)
+	httpURL := strings.Replace(livekitInternal, "wss://", "https://", 1)
 	httpURL = strings.Replace(httpURL, "ws://", "http://", 1)
 	dispatchURL := fmt.Sprintf("%s/twirp/livekit.AgentDispatchService/CreateDispatch", httpURL)
 
-	// Admin access token for dispatch
 	adminAt := auth.NewAccessToken(apiKey, apiSecret)
 	adminAt.SetVideoGrant(&auth.VideoGrant{RoomAdmin: true}).
 		SetIdentity("dispatch-client").
@@ -562,6 +675,7 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 	dispatchReqPayload := map[string]interface{}{
 		"agent_name": agentName,
 		"room":       roomName,
+		"metadata":   string(metadata),
 	}
 	payloadBytes, _ := json.Marshal(dispatchReqPayload)
 
@@ -573,11 +687,11 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 	reqDispatch.Header.Set("Content-Type", "application/json")
 	reqDispatch.Header.Set("Authorization", "Bearer "+adminToken)
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 10 * time.Second}
 	respDispatch, err := client.Do(reqDispatch)
 	if err != nil {
 		log.Printf("[kb/voice] Agent dispatch failed: %v", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to dispatch voice agent", "details": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to dispatch voice agent"})
 		return
 	}
 	defer respDispatch.Body.Close()
@@ -585,16 +699,64 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 	if respDispatch.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(respDispatch.Body)
 		log.Printf("[kb/voice] Dispatch API returned status %d: %s", respDispatch.StatusCode, string(body))
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to dispatch voice agent", "details": string(body)})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to dispatch voice agent"})
 		return
+	}
+
+	if store.DB != nil {
+		_ = store.DB.Create(&store.VoiceSession{
+			ID:            sessionID,
+			TenantID:      tid,
+			RoomName:      roomName,
+			UserEmail:     email,
+			UserName:      participantName,
+			ParticipantID: participantIdentity,
+			ScopesJSON:    string(mustJSON(scopes)),
+			WorkloadJTI:   workloadJTI,
+			Status:        "active",
+			CreatedAt:     time.Now().UTC(),
+		}).Error
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"token":                token,
-		"url":                  livekitURL,
+		"url":                  livekitPublic,
 		"room_name":            roomName,
 		"participant_identity": participantIdentity,
+		"session_id":           sessionID,
+		"tenant_id":            tid,
 	})
+}
+
+func sanitizeRoomSuffix(raw string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	var b strings.Builder
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+		if b.Len() >= 24 {
+			break
+		}
+	}
+	if b.Len() == 0 {
+		return "call"
+	}
+	return b.String()
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func mustJSON(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }
 
 func (h *KBHandler) VoiceBriefHandler(c *gin.Context) {

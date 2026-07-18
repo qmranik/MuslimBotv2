@@ -143,8 +143,8 @@ type toolExecuteRequest struct {
 	Confirm bool           `json:"confirm"`
 }
 
-// ToolExecuteHandler: POST /v1/ai/tool/execute → runs a catalog tool.
-// Write tools require confirm=true (the client presents a confirmation card).
+// ToolExecuteHandler: POST /v1/ai/tool/execute → runs a catalog READ tool.
+// Write tools must use POST /v1/agent/tool-actions with durable confirmation.
 func (b *Brain) ToolExecuteHandler(c *gin.Context) {
 	var req toolExecuteRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.Tool == "" {
@@ -156,11 +156,12 @@ func (b *Brain) ToolExecuteHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown tool"})
 		return
 	}
-	if spec.Kind == ToolWrite && !req.Confirm {
+	if spec.Kind == ToolWrite {
 		c.JSON(http.StatusPreconditionRequired, gin.H{
-			"error": "write tool requires confirm=true",
-			"tool":  req.Tool,
-			"kind":  "write",
+			"error":   "write tools require durable confirmation",
+			"tool":    req.Tool,
+			"kind":    "write",
+			"details": "Use POST /v1/agent/tool-actions then POST /v1/agent/tool-actions/:id/confirm",
 		})
 		return
 	}
