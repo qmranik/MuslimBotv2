@@ -18,6 +18,7 @@ For new single-VM deployments, start with the
 Operational documentation:
 
 - [Single-host provisioning and usage](single-host/README.md)
+- [As-built record and replication guide](single-host/AS_BUILT.md)
 - [Terraform state management and infrastructure destruction](single-host/STATE_AND_DESTROY.md)
 - [Docker Compose reference](../../COMPOSE.md)
 - [Full VM deployment plan](../docs/production/VM_DEPLOYMENT_PLAN.md)

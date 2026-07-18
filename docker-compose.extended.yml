@@ -116,9 +116,9 @@ services:
     image: traefik:v3.1
     restart: unless-stopped
     command:
-      # API & Dashboard
+      # API & Dashboard (G5: insecure API disabled; dashboard is not published.
+      # Expose it via a router behind authentik-auth@file if needed.)
       - "--api.dashboard=true"
-      - "--api.insecure=true"
       # Docker provider — auto-discover services via labels
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -139,12 +139,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8090:8080"   # Traefik dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
     networks:
-      - platform-net
+      # Static IP so the orchestrator can trust ONLY Traefik as the forward-auth
+      # source (G2). Nothing else on platform-net/smb-net-local shares this IP.
+      platform-net:
+        ipv4_address: 172.28.0.2
 
   # ── Go Orchestrator ──────────────────────────────────────────────
 
@@ -155,12 +157,28 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8080"
+      # ENV drives the production security floor (config.MustValidate). Leave as
+      # "production" for any internet-facing deploy so trusted-proxy + secret
+      # checks are enforced; set ENV=local only on a developer machine.
+      ENV: ${ENV:-production}
+      # G4: dev-only Administrator bypass. Never true in production (validator
+      # refuses to boot if it is).
+      AUTH_LOCAL_BYPASS: ${AUTH_LOCAL_BYPASS:-false}
+      # G2: only Traefik's static platform-net IP may supply X-authentik-* headers.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.28.0.2/32}
+      # P8: per-tenant cap on billable Gemini traffic.
+      AI_RATE_LIMIT_PER_MIN: ${AI_RATE_LIMIT_PER_MIN:-30}
+      AI_RATE_LIMIT_BURST: ${AI_RATE_LIMIT_BURST:-10}
       DATABASE_URL: "host=platform-postgres user=liteerp_admin password=${DB_PASS:-changeme_in_production} dbname=authentik_db port=5432 sslmode=disable"
       FRAPPE_URL: "http://frappe-web:8000"
       FRAPPE_SITE_HOST: "small.localhost"
       FRAPPE_API_KEY: ${FRAPPE_API_KEY:-}
       FRAPPE_API_SECRET: ${FRAPPE_API_SECRET:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # G6/P5: real secrets required — the orchestrator's config.MustValidate
+      # refuses to boot in production if these are empty or placeholders.
+      KBBFF_API_KEY: ${KBBFF_API_KEY:?set KBBFF_API_KEY (no placeholder)}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?set WEBHOOK_SECRET (no placeholder)}
       CHATWOOT_URL: "http://chatwoot:3000"
       CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
       NEXTCLOUD_URL: "https://files.smb.localhost"
@@ -186,7 +204,7 @@ services:
       - "traefik.http.routers.orchestrator.rule=Host(`api.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.orchestrator.entrypoints=websecure"
       - "traefik.http.routers.orchestrator.tls=true"
-      - "traefik.http.routers.orchestrator.middlewares=authentik-forwardauth@file"
+      - "traefik.http.routers.orchestrator.middlewares=authentik-auth@file"
       - "traefik.http.services.orchestrator.loadbalancer.server.port=8080"
     networks:
       - platform-net
@@ -327,6 +345,11 @@ volumes:
 networks:
   platform-net:
     driver: bridge
+    ipam:
+      config:
+        # Fixed subnet so Traefik can hold a stable static IP (172.28.0.2) that
+        # the orchestrator trusts as its sole forward-auth source (G2).
+        - subnet: 172.28.0.0/16
   smb-net-local:
     external: true
     name: liteerp_smb-net

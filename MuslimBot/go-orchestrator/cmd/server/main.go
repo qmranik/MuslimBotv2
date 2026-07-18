@@ -15,6 +15,7 @@ import (
 	"muslimbot-orchestrator/internal/mcp"
 	"muslimbot-orchestrator/internal/observability"
 	"muslimbot-orchestrator/internal/portals"
+	"muslimbot-orchestrator/internal/ratelimit"
 	"muslimbot-orchestrator/internal/store"
 	"muslimbot-orchestrator/internal/tenants"
 	"muslimbot-orchestrator/internal/voice"
@@ -71,7 +72,14 @@ func healthHandler(cfg *config.Config) gin.HandlerFunc {
 func main() {
 	cfg := config.LoadConfig()
 
+	// Fail loudly at boot on an unsafe production configuration (G2/G4/G6).
+	if err := cfg.MustValidate(); err != nil {
+		log.Fatalf("[config] %v", err)
+	}
+
 	store.InitDB()
+
+	aiLimiter := ratelimit.New(cfg.AIRateLimitPerMin, cfg.AIRateLimitBurst)
 
 	r := gin.New()
 	r.Use(gin.Recovery(), observability.RequestLogger())
@@ -131,9 +139,14 @@ func main() {
 
 			api.GET("/portals/:app/url", portalsHandler.GetPortalURL)
 
-			api.POST("/ai/chat", aiRouter.ChatHandler)
-			api.POST("/ai/generate-ui", aiBrain.GenerateUIHandler)
-			api.POST("/ai/tool/execute", aiBrain.ToolExecuteHandler)
+			// Billable Gemini surface — rate limited per tenant (P8).
+			aiGroup := api.Group("/ai")
+			aiGroup.Use(aiLimiter.Middleware())
+			{
+				aiGroup.POST("/chat", aiRouter.ChatHandler)
+				aiGroup.POST("/generate-ui", aiBrain.GenerateUIHandler)
+				aiGroup.POST("/tool/execute", aiBrain.ToolExecuteHandler)
+			}
 
 			// MCP host — direct tool surface (agent uses these via /ai/chat function-calling).
 			mcpGroup := api.Group("/mcp")

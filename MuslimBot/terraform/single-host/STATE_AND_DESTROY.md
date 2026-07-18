@@ -3,6 +3,9 @@
 This runbook covers the MuslimBot single-host module in this directory. Run all
 Terraform commands from `MuslimBot/terraform/single-host`.
 
+For the as-deployed topology and how to recreate it after a destroy, see
+[AS_BUILT.md](AS_BUILT.md).
+
 > `terraform destroy` permanently deletes the VM, its attached data disk, static
 > IP, firewall rules, subnet, VPC, service account, and IAM binding. Back up
 > application data before continuing.

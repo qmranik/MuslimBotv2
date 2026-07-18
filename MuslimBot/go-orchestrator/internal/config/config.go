@@ -1,6 +1,21 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
+
+// IsProduction reports whether the runtime is a non-local environment. Empty
+// ENV is treated as production (fail-safe): security gates that must not be
+// disabled by accident should key off this, not off ENV=="production".
+func (c *Config) IsProduction() bool {
+	switch c.Env {
+	case "local", "test", "dev", "development":
+		return false
+	default:
+		return true
+	}
+}
 
 type Config struct {
 	Port string
@@ -47,6 +62,22 @@ type Config struct {
 	ChatwootMCPEnabled bool
 
 	AuthentikInternalURL string
+
+	// AuthLocalBypass gates the dev-only "inject Administrator when headers are
+	// absent" path (G4). It must be explicitly enabled AND ENV=local; it fails
+	// closed otherwise so a production deploy can never silently run open.
+	AuthLocalBypass bool
+
+	// TrustedProxyCIDRs is the comma-separated allowlist of source networks
+	// permitted to supply X-authentik-* identity headers (G2). Only Traefik's
+	// forward-auth hop should be here. When set, headers from any other peer
+	// (n8n, Chatwoot, a rogue container on the shared network) are rejected.
+	TrustedProxyCIDRs string
+
+	// AIRateLimitPerMin / AIRateLimitBurst cap billable /v1/ai/* traffic per
+	// tenant (P8). 0 disables the limiter.
+	AIRateLimitPerMin int
+	AIRateLimitBurst  int
 
 	PlatformBaseDomain string
 
@@ -102,6 +133,11 @@ func LoadConfig() *Config {
 
 		AuthentikInternalURL: envOr("AUTHENTIK_INTERNAL_URL", "http://authentik-server:9000"),
 
+		AuthLocalBypass:   envOr("AUTH_LOCAL_BYPASS", "false") == "true",
+		TrustedProxyCIDRs: os.Getenv("TRUSTED_PROXY_CIDRS"),
+		AIRateLimitPerMin: envInt("AI_RATE_LIMIT_PER_MIN", 30),
+		AIRateLimitBurst:  envInt("AI_RATE_LIMIT_BURST", 10),
+
 		PlatformBaseDomain: envOr("PLATFORM_BASE_DOMAIN", "smb.localhost"),
 
 		GCPProjectID:   os.Getenv("GCP_PROJECT_ID"),
@@ -116,6 +152,15 @@ func LoadConfig() *Config {
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return fallback
 }

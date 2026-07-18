@@ -16,6 +16,7 @@ steps.
 
 ## Documentation
 
+- [As-built record and replication guide](AS_BUILT.md) — exact topology, sizing, APIs, and recreate steps from the 2026-07-18 deployment
 - [State management and full infrastructure destruction](STATE_AND_DESTROY.md)
 - [Canonical Docker Compose reference](../../../COMPOSE.md)
 - [Full VM deployment plan](../../docs/production/VM_DEPLOYMENT_PLAN.md)
