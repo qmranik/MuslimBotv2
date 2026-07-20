@@ -27,6 +27,12 @@ Go /v1/agent/*  →  Small ERP / Vertex RAG / n8n
 
 ## Features
 
+### Realtime knowledge context (ADR-0002)
+- Warm brief at join via `GET /v1/agent/kb/voice-brief`
+- Live retrieve per question via `POST /v1/agent/kb/retrieve` (tenant CEL filter)
+- Mid-call refresh: Redis Stream `kb:events:<tenant>` → refetch `/v1/agent/kb/context` → `agent.update_instructions`
+- Session heartbeat/end: `POST /v1/agent/sessions/heartbeat|end`
+
 ### Read tools (instant via Go)
 - Inventory / stock / sales / customers / receivables / low stock
 - Knowledge-base retrieve (`search_knowledge_base`)

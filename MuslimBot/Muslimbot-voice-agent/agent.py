@@ -35,6 +35,7 @@ from services.config import (
     LIVEKIT_AGENT_NAME,
     TENANT_ID,
 )
+from services.kb_update_service import KBUpdateWatcher, compose_instructions
 from services.memory import append_conversation_memory, get_conversation_memory
 from services.orchestrator_client import OrchestratorClient
 from services.tool_service import (
@@ -263,11 +264,14 @@ async def entrypoint(ctx: JobContext) -> None:
         return
 
     client = OrchestratorClient(workload_token=workload_token, base_url=GO_ORCHESTRATOR_URL)
+    watcher: Optional[KBUpdateWatcher] = None
 
     voice_context = ""
+    initial_generation = 0
     try:
         brief = await client.voice_brief()
         voice_context = str(brief.get("context") or "")
+        initial_generation = int(brief.get("kb_generation") or 0)
     except Exception as exc:
         logger.warning("Failed to load voice brief: %s", exc)
 
@@ -276,21 +280,17 @@ async def entrypoint(ctx: JobContext) -> None:
         if ctx.room.remote_participants
         else "unknown"
     )
+    memory_block = ""
     try:
         memory_turns = await get_conversation_memory(tenant_id, session_id)
         if memory_turns:
-            voice_context += "\n\nRECENT CONVERSATION HISTORY:\n"
+            memory_block = "\n\nRECENT CONVERSATION HISTORY:\n"
             for turn in memory_turns:
-                voice_context += f"{turn['role'].upper()}: {turn['text']}\n"
+                memory_block += f"{turn['role'].upper()}: {turn['text']}\n"
     except Exception as exc:
         logger.warning("Failed to load conversation memory: %s", exc)
 
-    instructions = SYSTEM_INSTRUCTIONS
-    if voice_context.strip():
-        instructions += (
-            "\n\nORGANIZATION KNOWLEDGE (use tools for live stock/orders):\n"
-            f"{voice_context.strip()}\n"
-        )
+    instructions = compose_instructions(SYSTEM_INSTRUCTIONS, voice_context) + memory_block
 
     agent = MuslimbotAgent(
         tenant_id=tenant_id,
@@ -308,6 +308,33 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
     )
 
+    async def _update_instructions(new_instructions: str) -> None:
+        # LiveKit Agents API — update warm context without ending the call.
+        if hasattr(agent, "update_instructions"):
+            await agent.update_instructions(new_instructions + memory_block)
+        else:
+            agent.instructions = new_instructions + memory_block
+            logger.warning("agent.update_instructions missing; set instructions attribute only")
+
+    async def _notify_browser(payload: dict[str, Any]) -> None:
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            await ctx.room.local_participant.publish_data(
+                data, reliable=True, topic="kb-context"
+            )
+        except Exception as exc:
+            logger.debug("kb-context data packet failed: %s", exc)
+
+    watcher = KBUpdateWatcher(
+        tenant_id=tenant_id,
+        session_id=session_id,
+        client=client,
+        update_instructions=_update_instructions,
+        notify=_notify_browser,
+    )
+    watcher.base_instructions = SYSTEM_INSTRUCTIONS
+    watcher.start(initial_generation=initial_generation)
+
     @session.on("conversation_item_added")
     def _on_item(ev: ConversationItemAddedEvent) -> None:
         item = getattr(ev, "item", None)
@@ -321,10 +348,11 @@ async def entrypoint(ctx: JobContext) -> None:
 
     @ctx.room.on("participant_disconnected")
     def _on_disconnect(participant) -> None:  # type: ignore[no-untyped-def]
-        logger.info("Participant %s disconnected; closing orchestrator client", participant.identity)
-        asyncio.create_task(client.close())
+        # Keep OrchestratorClient alive across participant disconnects; end on job exit.
+        logger.info("Participant %s disconnected", participant.identity)
 
     try:
+        await client.session_heartbeat()
         await session.start(agent=agent, room=ctx.room)
         await session.generate_reply(
             instructions=(
@@ -334,6 +362,12 @@ async def entrypoint(ctx: JobContext) -> None:
             )
         )
     finally:
+        if watcher is not None:
+            await watcher.stop()
+        try:
+            await client.session_end(reason="session_closed")
+        except Exception as exc:
+            logger.debug("session_end failed: %s", exc)
         await client.close()
 
 

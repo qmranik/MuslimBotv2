@@ -73,8 +73,64 @@ class OrchestratorClient:
             {"query": query, "top_k": top_k, "session_id": session_id},
         )
 
-    async def voice_brief(self) -> dict[str, Any]:
-        return await self._request("GET", "/v1/agent/kb/voice-brief")
+    async def voice_brief(self, if_none_match: str = "") -> dict[str, Any]:
+        url = f"{self.base_url}/v1/agent/kb/voice-brief"
+        session = await self._http()
+        headers = self._headers()
+        if if_none_match:
+            headers["If-None-Match"] = if_none_match
+        try:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 304:
+                    return {"ok": True, "status": 304, "not_modified": True}
+                text = await resp.text()
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception:
+                    data = {"raw": text[:500]}
+                if resp.status >= 400:
+                    err = data.get("error") if isinstance(data, dict) else text
+                    return {"ok": False, "status": resp.status, "error": str(err)[:500]}
+                if isinstance(data, dict):
+                    data.setdefault("ok", True)
+                    data["status"] = resp.status
+                    return data
+                return {"ok": True, "status": resp.status, "data": data}
+        except Exception as exc:
+            logger.error("voice_brief failed: %s", exc)
+            return {"ok": False, "error": str(exc), "status": 0}
+
+    async def kb_context(self, if_none_match: str = "") -> dict[str, Any]:
+        url = f"{self.base_url}/v1/agent/kb/context"
+        session = await self._http()
+        headers = self._headers()
+        if if_none_match:
+            headers["If-None-Match"] = if_none_match
+        try:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 304:
+                    return {"ok": True, "status": 304, "not_modified": True}
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception:
+                    data = {"raw": (await resp.text())[:500]}
+                if resp.status >= 400:
+                    err = data.get("error") if isinstance(data, dict) else "error"
+                    return {"ok": False, "status": resp.status, "error": str(err)[:500]}
+                if isinstance(data, dict):
+                    data.setdefault("ok", True)
+                    data["status"] = resp.status
+                    return data
+                return {"ok": True, "status": resp.status, "data": data}
+        except Exception as exc:
+            logger.error("kb_context failed: %s", exc)
+            return {"ok": False, "error": str(exc), "status": 0}
+
+    async def session_heartbeat(self) -> dict[str, Any]:
+        return await self._request("POST", "/v1/agent/sessions/heartbeat", {})
+
+    async def session_end(self, reason: str = "disconnected") -> dict[str, Any]:
+        return await self._request("POST", "/v1/agent/sessions/end", {"reason": reason})
 
     async def prepare_tool(
         self,

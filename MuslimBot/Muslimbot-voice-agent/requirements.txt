@@ -1,7 +1,8 @@
 # LiveKit-only voice worker — Gemini Live speech-to-speech.
 # KB ingestion/chat/voice-session APIs live in the Go orchestrator.
-livekit-agents~=1.5
-livekit-plugins-google~=1.0
+# Pin minors for mid-session update_instructions compatibility (ADR-0002).
+livekit-agents==1.5.2
+livekit-plugins-google==1.0.23
 python-dotenv>=1.0.0
 aiohttp>=3.9.0
 redis>=5.0.0
