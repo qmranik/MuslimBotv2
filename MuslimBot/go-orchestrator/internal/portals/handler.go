@@ -34,6 +34,11 @@ func (h *Handler) GetPortalURL(c *gin.Context) {
 		portalURL = strings.TrimRight(h.config.FrappePublicURL, "/") + "/ops"
 		authMechanism = "proxy"
 
+	case "builder":
+		// Frappe Builder (blog/website editor) on the same frappe-web host.
+		portalURL = strings.TrimRight(h.config.FrappePublicURL, "/") + "/builder"
+		authMechanism = "proxy"
+
 	case "nextcloud":
 		portalURL = h.config.NextcloudURL
 		authMechanism = "oidc"

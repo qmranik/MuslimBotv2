@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"muslimbot-orchestrator/internal/config"
+	"muslimbot-orchestrator/internal/knowledge"
 )
 
 type KBClient struct {
@@ -22,26 +23,29 @@ func NewKBClient(cfg *config.Config) *KBClient {
 }
 
 func VertexConfigured(cfg *config.Config) bool {
-	if cfg == nil {
-		return false
-	}
-	return cfg.GCPProjectID != "" && cfg.GCPLocation != "" && cfg.GCPRagCorpusID != ""
+	return knowledge.VertexConfigured(cfg)
 }
 
 func (k *KBClient) Chat(ctx context.Context, message, tenant string) (json.RawMessage, error) {
 	if !VertexConfigured(k.cfg) {
-		return nil, fmt.Errorf("Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)")
+		return nil, fmt.Errorf("Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID_V2)")
 	}
 	query := strings.TrimSpace(message)
 	if query == "" {
 		return nil, fmt.Errorf("query required")
 	}
-	chunks, err := RetrieveContextsFromVertex(ctx, k.cfg, query, 8)
+	tenant = strings.TrimSpace(tenant)
+	if tenant == "" {
+		return nil, fmt.Errorf("tenant required for filtered retrieve")
+	}
+	// Tool executor runs as staff-equivalent within the request tenant.
+	access := knowledge.PolicyStaff(tenant)
+	result, err := knowledge.RetrieveFiltered(ctx, k.cfg, access, query, 8)
 	if err != nil {
 		return nil, err
 	}
 	var texts []string
-	for _, ch := range chunks {
+	for _, ch := range result.Chunks {
 		if t := strings.TrimSpace(ch.Text); t != "" {
 			texts = append(texts, t)
 		}
@@ -51,11 +55,12 @@ func (k *KBClient) Chat(ctx context.Context, message, tenant string) (json.RawMe
 		reply = "No knowledge contexts found for that query."
 	}
 	return json.Marshal(map[string]any{
-		"reply":       reply,
-		"chunks":      chunks,
-		"chunks_used": len(chunks),
-		"tenant":      tenant,
-		"engine":      "vertex_rag",
+		"reply":         reply,
+		"chunks":        result.Chunks,
+		"chunks_used":   result.ChunksUsed,
+		"tenant":        tenant,
+		"kb_generation": result.KBGeneration,
+		"engine":        "vertex_rag",
 	})
 }
 

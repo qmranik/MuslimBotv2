@@ -23,9 +23,33 @@ func TestMustValidate_ProductionPasses(t *testing.T) {
 		TrustedProxyCIDRs:         "172.20.0.0/16",
 		OrchestratorServiceAPIKey: "a-real-key",
 		WebhookSecret:             "a-real-secret",
+		DatabaseURL:               "postgres://user:pass@platform-postgres:5432/orchestrator",
+		GeminiAPIKey:              "a-real-gemini-key",
 	}
 	if err := c.MustValidate(); err != nil {
 		t.Fatalf("well-formed production config should pass: %v", err)
+	}
+}
+
+func TestMustValidate_ProductionRequiresPlatformDB(t *testing.T) {
+	c := &Config{
+		Env: "production", TrustedProxyCIDRs: "172.20.0.0/16",
+		OrchestratorServiceAPIKey: "k", WebhookSecret: "s",
+		GeminiAPIKey: "real", DatabaseURL: "", // missing
+	}
+	if err := c.MustValidate(); err == nil {
+		t.Fatal("production without DATABASE_URL must fail (G10 fail-closed / durable confirmations)")
+	}
+}
+
+func TestMustValidate_ProductionRejectsMockKey(t *testing.T) {
+	c := &Config{
+		Env: "production", TrustedProxyCIDRs: "172.20.0.0/16",
+		OrchestratorServiceAPIKey: "k", WebhookSecret: "s",
+		DatabaseURL: "postgres://x", GeminiAPIKey: "mock-key",
+	}
+	if err := c.MustValidate(); err == nil {
+		t.Fatal("production with mock-key must fail")
 	}
 }
 

@@ -144,6 +144,7 @@ func main() {
 				kb.GET("/sources", kbHandler.ListSourcesHandler)
 				kb.GET("/sources/:source_id", kbHandler.GetSourceHandler)
 				kb.POST("/sources/:source_id/sync", kbHandler.SyncSourceHandler)
+				kb.PATCH("/sources/:source_id", kbHandler.PatchSourceHandler)
 				kb.DELETE("/sources/:source_id", kbHandler.DeleteSourceHandler)
 				kb.POST("/sources/upload", kbHandler.UploadHandler)
 				kb.POST("/sources/url", kbHandler.URLHandler)
@@ -169,12 +170,21 @@ func main() {
 				aiGroup.POST("/tool/execute", aiBrain.ToolExecuteHandler)
 			}
 
+			// MCP direct surface. Shares the AI rate limiter (GAP-7): a raw
+			// mcp/call is as billable/abusable as an ai/* call.
 			mcpGroup := api.Group("/mcp")
+			mcpGroup.Use(aiLimiter.Middleware())
 			{
 				mcpGroup.GET("/servers", mcpHandler.GetServers)
 				mcpGroup.GET("/tools", mcpHandler.GetTools)
 				mcpGroup.POST("/call", mcpHandler.CallTool)
 			}
+
+			// Human-plane durable write confirmations (GAP-1). Browser identity
+			// from Authentik; same ToolAction table/audit as the voice plane.
+			api.POST("/tool-actions", actionsHandler.PrepareHuman)
+			api.POST("/tool-actions/:id/confirm", actionsHandler.ConfirmHuman)
+			api.GET("/tool-actions/:id", actionsHandler.GetHuman)
 
 			api.POST("/workflows/trigger", workflowsHandler.Trigger)
 			api.POST("/events/ingest", eventsHandler.IngestEvent)
@@ -192,6 +202,9 @@ func main() {
 			agent.GET("/tools", actionsHandler.ListTools)
 			agent.POST("/kb/retrieve", kbHandler.AgentRetrieveHandler)
 			agent.GET("/kb/voice-brief", kbHandler.AgentVoiceBriefHandler)
+			agent.GET("/kb/context", kbHandler.AgentContextHandler)
+			agent.POST("/sessions/heartbeat", kbHandler.AgentSessionHeartbeatHandler)
+			agent.POST("/sessions/end", kbHandler.AgentSessionEndHandler)
 			agent.POST("/tool-actions", actionsHandler.Prepare)
 			agent.POST("/tool-actions/:id/confirm", actionsHandler.Confirm)
 			agent.GET("/tool-actions/:id", actionsHandler.Get)

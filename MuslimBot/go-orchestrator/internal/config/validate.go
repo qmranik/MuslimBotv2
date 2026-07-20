@@ -45,6 +45,19 @@ func (c *Config) MustValidate() error {
 		}
 	}
 
+	// G10 + durable confirmations: a platform DB must be configured in production.
+	// Without it, resolveTenant() falls back to the single-tenant "default" scope
+	// (cross-tenant leakage risk) and human/voice write confirmations cannot
+	// persist. GAP-6.
+	if strings.TrimSpace(c.DatabaseURL) == "" {
+		problems = append(problems, "DATABASE_URL is empty — a platform DB is required in production for tenant fail-closed resolution (G10) and durable tool-action confirmations")
+	}
+
+	// GAP-8: the mock Gemini key ships a canned response — never in production.
+	if strings.TrimSpace(c.GeminiAPIKey) == "mock-key" {
+		problems = append(problems, "GEMINI_API_KEY=mock-key returns canned responses — set a real key in production")
+	}
+
 	// ADR-0002: never allow unfiltered shared-corpus retrieval in production.
 	if c.RagAllowUnfiltered {
 		problems = append(problems, "RAG_ALLOW_UNFILTERED=true is forbidden in production (tenant isolation)")

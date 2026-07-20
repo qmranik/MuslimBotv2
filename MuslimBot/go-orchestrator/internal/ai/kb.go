@@ -14,16 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/storage"
 	aiplatform "cloud.google.com/go/aiplatform/apiv1"
 	aiplatformpb "cloud.google.com/go/aiplatform/apiv1/aiplatformpb"
 	"github.com/gin-gonic/gin"
 	"github.com/google/generative-ai-go/genai"
 	"github.com/livekit/protocol/auth"
-	"github.com/redis/go-redis/v9"
-	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-	"golang.org/x/oauth2/google"
 	authpkg "muslimbot-orchestrator/internal/auth"
 	"muslimbot-orchestrator/internal/config"
 	"muslimbot-orchestrator/internal/knowledge"
@@ -52,19 +48,6 @@ func GenerateKBSID() string {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	return fmt.Sprintf("KBS-%X", b)
-}
-
-// getRedisClient returns a Redis client pointing to the shared cache
-func getRedisClient(cfg *config.Config) *redis.Client {
-	if cfg.RedisURL == "" {
-		return nil
-	}
-	opt, err := redis.ParseURL(cfg.RedisURL)
-	if err != nil {
-		log.Printf("[kb/redis] Failed to parse Redis URL: %v", err)
-		return nil
-	}
-	return redis.NewClient(opt)
 }
 
 // --- Route Handlers ---
@@ -279,6 +262,12 @@ func (h *KBHandler) UploadHandler(c *gin.Context) {
 	if tid == "" {
 		tid = "default"
 	}
+	groupsAny, _ := c.Get("user_groups")
+	groups, _ := groupsAny.([]string)
+	if !knowledge.IsStaff(groups) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Staff role required to upload sources"})
+		return
+	}
 
 	file, err := c.FormFile("file")
 	if err != nil {
@@ -301,22 +290,37 @@ func (h *KBHandler) UploadHandler(c *gin.Context) {
 	uploadedBy, _ := c.Get("user_email")
 	uploader, _ := uploadedBy.(string)
 
-	if !VertexConfigured(h.config) {
+	if !knowledge.VertexConfigured(h.config) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID_V2)",
 		})
+		return
+	}
+
+	// Read multipart into memory before returning so the async worker is safe.
+	srcFile, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to open upload"})
+		return
+	}
+	fileBytes, err := io.ReadAll(srcFile)
+	_ = srcFile.Close()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read upload"})
 		return
 	}
 
 	sourceID := GenerateKBSID()
 	source := store.KBSource{
-		ID:         sourceID,
-		TenantID:   tid,
-		Title:      title,
-		SourceType: sourceType,
-		Visibility: visibility,
-		UploadedBy: uploader,
-		Status:     "indexing",
+		ID:             sourceID,
+		TenantID:       tid,
+		Title:          title,
+		SourceType:     sourceType,
+		Visibility:     visibility,
+		UploadedBy:     uploader,
+		Status:         "indexing",
+		Revision:       1,
+		MetadataStatus: store.KBMetaPending,
 	}
 
 	if store.DB != nil {
@@ -324,43 +328,20 @@ func (h *KBHandler) UploadHandler(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create source record"})
 			return
 		}
+		if _, err := knowledge.CreateIngestionJob(tid, sourceID, 1); err != nil {
+			log.Printf("[kb/upload] failed to create ingestion job: %v", err)
+		}
 	}
 
-	// Process upload asynchronously
-	go func() {
+	filename := file.Filename
+	go func(src store.KBSource, name string, data []byte) {
 		ctx := context.Background()
-		srcFile, err := file.Open()
-		if err != nil {
-			updateSourceStatus(sourceID, "failed", "")
-			return
+		if err := knowledge.IngestBytes(ctx, h.config, src, name, data); err != nil {
+			log.Printf("[kb/upload] ingest failed source=%s: %v", src.ID, err)
 		}
-		defer srcFile.Close()
+	}(source, filename, fileBytes)
 
-		fileBytes, err := io.ReadAll(srcFile)
-		if err != nil {
-			updateSourceStatus(sourceID, "failed", "")
-			return
-		}
-
-		// Upload to GCS
-		gcsURI, err := uploadToGCS(ctx, h.config, file.Filename, fileBytes)
-		if err != nil {
-			log.Printf("[kb/upload] GCS upload failed: %v", err)
-			updateSourceStatus(sourceID, "failed", "")
-			return
-		}
-
-		// Import to Vertex
-		ragFileID, err := importToVertex(ctx, h.config, gcsURI, file.Filename)
-		if err != nil {
-			log.Printf("[kb/upload] Vertex import failed: %v", err)
-			updateSourceStatus(sourceID, "failed", "")
-		} else {
-			updateSourceStatus(sourceID, "indexed", ragFileID)
-		}
-	}()
-
-	c.JSON(http.StatusOK, gin.H{"source": sourceID, "status": "queued"})
+	c.JSON(http.StatusOK, gin.H{"source": sourceID, "status": "queued", "revision": 1})
 }
 
 func (h *KBHandler) URLHandler(c *gin.Context) {
@@ -368,6 +349,12 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 	tid, _ := tenantID.(string)
 	if tid == "" {
 		tid = "default"
+	}
+	groupsAny, _ := c.Get("user_groups")
+	groups, _ := groupsAny.([]string)
+	if !knowledge.IsStaff(groups) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Staff role required to ingest URLs"})
+		return
 	}
 
 	var req struct {
@@ -380,10 +367,14 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
+	if strings.TrimSpace(req.URL) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "url required"})
+		return
+	}
 
-	if !VertexConfigured(h.config) {
+	if !knowledge.VertexConfigured(h.config) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID_V2)",
 		})
 		return
 	}
@@ -401,14 +392,16 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 
 	sourceID := GenerateKBSID()
 	source := store.KBSource{
-		ID:         sourceID,
-		TenantID:   tid,
-		Title:      title,
-		SourceType: "scrape",
-		URL:        req.URL,
-		Visibility: visibility,
-		UploadedBy: uploader,
-		Status:     "indexing",
+		ID:             sourceID,
+		TenantID:       tid,
+		Title:          title,
+		SourceType:     "scrape",
+		URL:            req.URL,
+		Visibility:     visibility,
+		UploadedBy:     uploader,
+		Status:         "indexing",
+		Revision:       1,
+		MetadataStatus: store.KBMetaPending,
 	}
 
 	if store.DB != nil {
@@ -416,44 +409,38 @@ func (h *KBHandler) URLHandler(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create source record"})
 			return
 		}
+		if _, err := knowledge.CreateIngestionJob(tid, sourceID, 1); err != nil {
+			log.Printf("[kb/url] failed to create ingestion job: %v", err)
+		}
 	}
 
-	// Process URL Ingestion asynchronously
-	go func() {
+	go func(src store.KBSource, pageURL string) {
 		ctx := context.Background()
-		// Scrape content
-		text, err := scrapeURLText(req.URL)
+		text, err := scrapeURLText(pageURL)
 		if err != nil {
 			log.Printf("[kb/url] Scraping failed: %v", err)
-			updateSourceStatus(sourceID, "failed", "")
+			knowledge.MarkSourceFailed(src.ID, err.Error())
 			return
 		}
-
-		filename := fmt.Sprintf("%s.txt", sourceID)
-		gcsURI, err := uploadToGCS(ctx, h.config, filename, []byte(text))
-		if err != nil {
-			log.Printf("[kb/url] GCS upload failed: %v", err)
-			updateSourceStatus(sourceID, "failed", "")
-			return
+		filename := fmt.Sprintf("%s.txt", src.ID)
+		if err := knowledge.IngestBytes(ctx, h.config, src, filename, []byte(text)); err != nil {
+			log.Printf("[kb/url] ingest failed source=%s: %v", src.ID, err)
 		}
+	}(source, req.URL)
 
-		ragFileID, err := importToVertex(ctx, h.config, gcsURI, filename)
-		if err != nil {
-			log.Printf("[kb/url] Vertex import failed: %v", err)
-			updateSourceStatus(sourceID, "failed", "")
-		} else {
-			updateSourceStatus(sourceID, "indexed", ragFileID)
-		}
-	}()
-
-	c.JSON(http.StatusOK, gin.H{"source": sourceID, "status": "scrape_queued"})
+	c.JSON(http.StatusOK, gin.H{"source": sourceID, "status": "scrape_queued", "revision": 1})
 }
 
 func (h *KBHandler) RetrieveHandler(c *gin.Context) {
-	if !VertexConfigured(h.config) {
+	if !knowledge.VertexConfigured(h.config) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID_V2)",
 		})
+		return
+	}
+	access, err := knowledge.PolicyFromCaller(c)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 	var req struct {
@@ -469,7 +456,7 @@ func (h *KBHandler) RetrieveHandler(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	chunks, err := RetrieveContextsFromVertex(ctx, h.config, req.Query, req.TopK)
+	result, err := knowledge.RetrieveFiltered(ctx, h.config, access, req.Query, req.TopK)
 	if err != nil {
 		log.Printf("[kb/retrieve] Vertex retrieve failed: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -477,17 +464,25 @@ func (h *KBHandler) RetrieveHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"query":       req.Query,
-		"chunks":      chunks,
-		"chunks_used": len(chunks),
+		"query":          result.Query,
+		"chunks":         result.Chunks,
+		"chunks_used":    result.ChunksUsed,
+		"kb_generation":  result.KBGeneration,
+		"access_policy":  result.AccessPolicy,
+		"metadata_filter": result.MetadataFilter,
 	})
 }
 
 func (h *KBHandler) ChatHandler(c *gin.Context) {
-	if !VertexConfigured(h.config) {
+	if !knowledge.VertexConfigured(h.config) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID)",
+			"error": "Vertex AI RAG configurations not set (GCP_PROJECT_ID, GCP_LOCATION, GCP_RAG_CORPUS_ID_V2)",
 		})
+		return
+	}
+	access, err := knowledge.PolicyFromCaller(c)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 	var req struct {
@@ -508,12 +503,13 @@ func (h *KBHandler) ChatHandler(c *gin.Context) {
 	}
 
 	ctx := context.Background()
-	chunks, err := RetrieveContextsFromVertex(ctx, h.config, req.Message, req.TopK)
+	result, err := knowledge.RetrieveFiltered(ctx, h.config, access, req.Message, req.TopK)
 	if err != nil {
 		log.Printf("[kb/chat] Context retrieve failed: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to pull knowledge context from Vertex AI RAG"})
 		return
 	}
+	chunks := result.Chunks
 
 	var snippetTexts []string
 	for _, chunk := range chunks {
@@ -564,11 +560,58 @@ func (h *KBHandler) ChatHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"reply":       reply,
-		"session_id":  sessionID,
-		"chunks":      chunks,
-		"chunks_used": len(chunks),
-		"status":      "ok",
+		"reply":         reply,
+		"session_id":    sessionID,
+		"chunks":        chunks,
+		"chunks_used":   len(chunks),
+		"kb_generation": result.KBGeneration,
+		"access_policy": result.AccessPolicy,
+		"status":        "ok",
+	})
+}
+
+// PatchSourceHandler: PATCH /v1/kb/sources/:source_id — staff visibility/title updates.
+func (h *KBHandler) PatchSourceHandler(c *gin.Context) {
+	sourceID := c.Param("source_id")
+	tenantID, _ := c.Get("tenant_id")
+	tid, _ := tenantID.(string)
+	if tid == "" {
+		tid = "default"
+	}
+	groupsAny, _ := c.Get("user_groups")
+	groups, _ := groupsAny.([]string)
+	if !knowledge.IsStaff(groups) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Staff role required"})
+		return
+	}
+	if store.DB == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "database unavailable"})
+		return
+	}
+	var req struct {
+		Visibility string `json:"visibility"`
+		Title      string `json:"title"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+	var source store.KBSource
+	if err := store.DB.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", sourceID, tid).First(&source).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Source not found"})
+		return
+	}
+	visibility := strings.ToLower(strings.TrimSpace(req.Visibility))
+	if visibility == "" {
+		visibility = source.Visibility
+	}
+	if err := knowledge.UpdateSourceVisibility(h.config, &source, visibility, req.Title); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"source":        source,
+		"kb_generation": knowledge.CurrentGeneration(tid),
 	})
 }
 
@@ -628,13 +671,23 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 		return
 	}
 
-	metadata, _ := json.Marshal(map[string]any{
+	access := knowledge.PolicyStaff(tid)
+	// Browser-visible participant metadata must NOT include the workload JWT.
+	participantMeta, _ := json.Marshal(map[string]any{
+		"tenant_id":  tid,
+		"session_id": sessionID,
+		"user_email": email,
+		"user_name":  participantName,
+	})
+	// Agent dispatch metadata includes the workload token (not browser-visible).
+	dispatchMeta, _ := json.Marshal(map[string]any{
 		"tenant_id":      tid,
 		"session_id":     sessionID,
 		"user_email":     email,
 		"user_name":      participantName,
 		"scopes":         scopes,
 		"workload_token": workloadToken,
+		"kb_generation":  knowledge.CurrentGeneration(tid),
 	})
 
 	// Generate Join Token for the browser participant.
@@ -648,7 +701,7 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 	at.SetVideoGrant(grant).
 		SetIdentity(participantIdentity).
 		SetName(participantName).
-		SetMetadata(string(metadata)).
+		SetMetadata(string(participantMeta)).
 		SetValidFor(time.Hour)
 
 	token, err := at.ToJWT()
@@ -675,7 +728,7 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 	dispatchReqPayload := map[string]interface{}{
 		"agent_name": agentName,
 		"room":       roomName,
-		"metadata":   string(metadata),
+		"metadata":   string(dispatchMeta),
 	}
 	payloadBytes, _ := json.Marshal(dispatchReqPayload)
 
@@ -703,18 +756,23 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 		return
 	}
 
+	now := time.Now().UTC()
 	if store.DB != nil {
 		_ = store.DB.Create(&store.VoiceSession{
-			ID:            sessionID,
-			TenantID:      tid,
-			RoomName:      roomName,
-			UserEmail:     email,
-			UserName:      participantName,
-			ParticipantID: participantIdentity,
-			ScopesJSON:    string(mustJSON(scopes)),
-			WorkloadJTI:   workloadJTI,
-			Status:        "active",
-			CreatedAt:     time.Now().UTC(),
+			ID:                      sessionID,
+			TenantID:                tid,
+			RoomName:                roomName,
+			UserEmail:               email,
+			UserName:                participantName,
+			ParticipantID:           participantIdentity,
+			ScopesJSON:              string(mustJSON(scopes)),
+			AllowedVisibilitiesJSON: access.VisibilitiesJSON(),
+			KBGeneration:            knowledge.CurrentGeneration(tid),
+			WorkloadJTI:             workloadJTI,
+			Status:                  "active",
+			CreatedAt:               now,
+			UpdatedAt:               now,
+			LastHeartbeatAt:         &now,
 		}).Error
 	}
 
@@ -725,6 +783,7 @@ func (h *KBHandler) VoiceSessionHandler(c *gin.Context) {
 		"participant_identity": participantIdentity,
 		"session_id":           sessionID,
 		"tenant_id":            tid,
+		"kb_generation":        knowledge.CurrentGeneration(tid),
 	})
 }
 
@@ -760,151 +819,93 @@ func mustJSON(v any) []byte {
 }
 
 func (h *KBHandler) VoiceBriefHandler(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
-	tid, _ := tenantID.(string)
-	if tid == "" {
-		tid = "default"
-	}
-
-	ctx := context.Background()
-	brief := getVoiceBriefCached(ctx, h.config, tid)
-	if brief == "" {
-		var err error
-		brief, err = rebuildVoiceBrief(ctx, h.config, tid)
+	access, err := knowledge.PolicyFromCaller(c)
+	if err != nil {
+		// Workload JWT path may call this via agent handler after setting tenant.
+		access, err = knowledge.PolicyFromWorkload(c)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 			return
 		}
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"tenant_id": tid,
-		"context":   brief,
-	})
-}
-
-func (h *KBHandler) RebuildVoiceBriefHandler(c *gin.Context) {
-	tenantID, _ := c.Get("tenant_id")
-	tid, _ := tenantID.(string)
-	if tid == "" {
-		tid = "default"
-	}
-
 	ctx := context.Background()
-	brief, err := rebuildVoiceBrief(ctx, h.config, tid)
+	brief, err := knowledge.GetOrBuildVoiceBrief(ctx, h.config, access)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
+	etag := fmt.Sprintf(`W/"kb-%d-%s"`, brief.KBGeneration, brief.Digest)
+	if match := c.GetHeader("If-None-Match"); match != "" && match == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.Header("ETag", etag)
 	c.JSON(http.StatusOK, gin.H{
-		"tenant_id": tid,
-		"context":   brief,
+		"tenant_id":     brief.TenantID,
+		"context":       brief.Context,
+		"kb_generation": brief.KBGeneration,
+		"generated_at":  brief.GeneratedAt,
+		"digest":        brief.Digest,
+		"access_policy": brief.AccessPolicy,
+	})
+}
+
+func (h *KBHandler) RebuildVoiceBriefHandler(c *gin.Context) {
+	access, err := knowledge.PolicyFromCaller(c)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	ctx := context.Background()
+	brief, err := knowledge.RebuildVoiceBrief(ctx, h.config, access)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"tenant_id":     brief.TenantID,
+		"context":       brief.Context,
+		"kb_generation": brief.KBGeneration,
+		"generated_at":  brief.GeneratedAt,
+		"digest":        brief.Digest,
+		"access_policy": brief.AccessPolicy,
+	})
+}
+
+// AgentContextHandler: GET /v1/agent/kb/context — compact session state for watchers.
+func (h *KBHandler) AgentContextHandler(c *gin.Context) {
+	if !authpkg.HasScope(c, authpkg.ScopeKBRead) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "missing kb:read scope"})
+		return
+	}
+	access, err := knowledge.PolicyFromWorkload(c)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	ctx := context.Background()
+	brief, err := knowledge.GetOrBuildVoiceBrief(ctx, h.config, access)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	etag := fmt.Sprintf(`W/"kb-%d-%s"`, brief.KBGeneration, brief.Digest)
+	if match := c.GetHeader("If-None-Match"); match != "" && match == etag {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.Header("ETag", etag)
+	c.JSON(http.StatusOK, gin.H{
+		"tenant_id":     brief.TenantID,
+		"kb_generation": brief.KBGeneration,
+		"revision":      brief.KBGeneration,
+		"digest":        brief.Digest,
+		"context":       brief.Context,
+		"generated_at":  brief.GeneratedAt,
 	})
 }
 
 // --- Helpers & Background Processing ---
-
-func updateSourceStatus(id, status, ragFileID string) {
-	if store.DB == nil {
-		return
-	}
-	updates := map[string]interface{}{"status": status}
-	if ragFileID != "" {
-		updates["rag_file_id"] = ragFileID
-	}
-	if err := store.DB.Model(&store.KBSource{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		log.Printf("[kb/db] Failed to update source status: %v", err)
-	}
-}
-
-func uploadToGCS(ctx context.Context, cfg *config.Config, filename string, data []byte) (string, error) {
-	if cfg.GCSBucketName == "" {
-		return "", fmt.Errorf("GCS_BUCKET_NAME not set")
-	}
-
-	storageClient, err := storage.NewClient(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to create storage client: %w", err)
-	}
-	defer storageClient.Close()
-
-	objectName := fmt.Sprintf("rag-imports/%s", filename)
-	wc := storageClient.Bucket(cfg.GCSBucketName).Object(objectName).NewWriter(ctx)
-	if _, err := wc.Write(data); err != nil {
-		_ = wc.Close()
-		return "", err
-	}
-	if err := wc.Close(); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("gs://%s/%s", cfg.GCSBucketName, objectName), nil
-}
-
-func importToVertex(ctx context.Context, cfg *config.Config, gcsURI, filename string) (string, error) {
-	if cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GCPRagCorpusID == "" {
-		return "", fmt.Errorf("Vertex AI configs not set")
-	}
-
-	client, err := aiplatform.NewVertexRagDataClient(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to create Vertex RAG Data client: %w", err)
-	}
-	defer client.Close()
-
-	parent := fmt.Sprintf("projects/%s/locations/%s/ragCorpora/%s", cfg.GCPProjectID, cfg.GCPLocation, cfg.GCPRagCorpusID)
-
-	req := &aiplatformpb.ImportRagFilesRequest{
-		Parent: parent,
-		ImportRagFilesConfig: &aiplatformpb.ImportRagFilesConfig{
-			ImportSource: &aiplatformpb.ImportRagFilesConfig_GcsSource{
-				GcsSource: &aiplatformpb.GcsSource{
-					Uris: []string{gcsURI},
-				},
-			},
-		},
-	}
-
-	op, err := client.ImportRagFiles(ctx, req)
-	if err != nil {
-		return "", err
-	}
-
-	_, err = op.Wait(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	// File imported successfully. Find RAG file ID using list API
-	ragFileID, err := findRagFileByName(ctx, client, parent, filename)
-	if err != nil {
-		log.Printf("[kb/import] Failed to find imported file resource ID: %v", err)
-		return gcsURI, nil // Return GCS URI as fallback
-	}
-
-	return ragFileID, nil
-}
-
-func findRagFileByName(ctx context.Context, client *aiplatform.VertexRagDataClient, parentCorpus, displayName string) (string, error) {
-	req := &aiplatformpb.ListRagFilesRequest{
-		Parent: parentCorpus,
-	}
-	it := client.ListRagFiles(ctx, req)
-	for {
-		resp, err := it.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-		if resp.DisplayName == displayName {
-			return resp.Name, nil
-		}
-	}
-	return "", fmt.Errorf("rag file not found")
-}
 
 func scrapeURLText(urlStr string) (string, error) {
 	resp, err := http.Get(urlStr)
@@ -938,199 +939,13 @@ func scrapeURLText(urlStr string) (string, error) {
 	return strings.TrimSpace(text), nil
 }
 
+// RetrieveContextsFromVertex is removed; use knowledge.RetrieveFiltered with a
+// server-derived KnowledgeAccess. This stub remains only to fail closed if any
+// legacy caller still references the old unfiltered path.
 func RetrieveContextsFromVertex(ctx context.Context, cfg *config.Config, query string, topK int) ([]RagChunk, error) {
-	if cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GCPRagCorpusID == "" {
-		return nil, fmt.Errorf("Vertex AI RAG configurations not set")
-	}
-
-	urlStr := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s:retrieveContexts",
-		cfg.GCPLocation, cfg.GCPProjectID, cfg.GCPLocation)
-
-	requestBody := map[string]interface{}{
-		"vertex_rag_store": map[string]interface{}{
-			"rag_resources": []map[string]interface{}{
-				{
-					"rag_corpus": fmt.Sprintf("projects/%s/locations/%s/ragCorpora/%s",
-						cfg.GCPProjectID, cfg.GCPLocation, cfg.GCPRagCorpusID),
-				},
-			},
-			"vector_distance_threshold": 0.3,
-		},
-		"query": map[string]interface{}{
-			"text": query,
-		},
-	}
-
-	jsonBytes, err := json.Marshal(requestBody)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := google.DefaultClient(ctx, "https://www.googleapis.com/auth/cloud-platform")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Google client: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", urlStr, bytes.NewBuffer(jsonBytes))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Vertex retrieveContexts returned status %d: %s", resp.StatusCode, string(respBytes))
-	}
-
-	var responseData struct {
-		Contexts struct {
-			Contexts []struct {
-				Text  string  `json:"text"`
-				Score float64 `json:"score"`
-			} `json:"contexts"`
-		} `json:"contexts"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
-		return nil, err
-	}
-
-	var chunks []RagChunk
-	for _, c := range responseData.Contexts.Contexts {
-		if strings.TrimSpace(c.Text) != "" {
-			chunks = append(chunks, RagChunk{
-				Text:  c.Text,
-				Score: c.Score,
-			})
-		}
-	}
-
-	return chunks, nil
-}
-
-func getVoiceBriefCached(ctx context.Context, cfg *config.Config, tenantID string) string {
-	rdb := getRedisClient(cfg)
-	if rdb == nil {
-		return ""
-	}
-	val, err := rdb.Get(ctx, "voice_brief:"+tenantID).Result()
-	if err != nil {
-		return ""
-	}
-	return val
-}
-
-func setVoiceBriefCached(ctx context.Context, cfg *config.Config, tenantID string, val string) {
-	rdb := getRedisClient(cfg)
-	if rdb == nil {
-		return
-	}
-	_ = rdb.Set(ctx, "voice_brief:"+tenantID, val, 0).Err()
-}
-
-func rebuildVoiceBrief(ctx context.Context, cfg *config.Config, tenantID string) (string, error) {
-	var snippets []string
-	seen := make(map[string]bool)
-	totalLen := 0
-	maxChars := 4000
-
-	cannedQueries := []string{
-		"What is your return policy?",
-		"What are your business hours?",
-		"Do you offer delivery?",
-		"What payment methods do you accept?",
-		"How can I contact customer support?",
-		"What is your warranty policy?",
-		"Do you have a loyalty program?",
-		"What are your shipping times?",
-		"Where are you located?",
-		"What products do you sell?",
-		"How do I place an order?",
-		"What is your refund process?",
-		"Do you offer bulk discounts?",
-		"What areas do you deliver to?",
-		"What is your privacy policy?",
-	}
-
-	for _, q := range cannedQueries {
-		chunks, err := RetrieveContextsFromVertex(ctx, cfg, q, 2)
-		if err == nil {
-			for _, chunk := range chunks {
-				txt := strings.TrimSpace(chunk.Text)
-				if txt != "" && !seen[txt] {
-					seen[txt] = true
-					if len(txt) > 500 {
-						txt = txt[:500]
-					}
-					snippets = append(snippets, txt)
-					totalLen += len(txt)
-				}
-			}
-		}
-		if totalLen >= maxChars {
-			break
-		}
-	}
-
-	brief := ""
-	if len(snippets) > 0 {
-		var err error
-		brief, err = compressWithGemini(ctx, cfg, snippets)
-		if err != nil {
-			log.Printf("[kb/voice_brief] Gemini compression failed: %v", err)
-			joined := strings.Join(snippets, "\n\n")
-			if len(joined) > maxChars {
-				joined = joined[:maxChars]
-			}
-			brief = joined
-		}
-	}
-
-	if strings.TrimSpace(brief) == "" {
-		brief = "No indexed knowledge yet."
-	}
-
-	setVoiceBriefCached(ctx, cfg, tenantID, brief)
-	return brief, nil
-}
-
-func compressWithGemini(ctx context.Context, cfg *config.Config, snippets []string) (string, error) {
-	if cfg.GeminiAPIKey == "" {
-		return "", fmt.Errorf("GEMINI_API_KEY is not set")
-	}
-
-	prompt := "Compress the following knowledge snippets into a spoken-friendly FAQ brief for a voice assistant. Max 4000 characters. Use plain sentences, no markdown, no bullet symbols.\n\n" +
-		strings.Join(snippets, "\n\n---\n\n")
-
-	genClient, err := genai.NewClient(ctx, option.WithAPIKey(cfg.GeminiAPIKey))
-	if err != nil {
-		return "", err
-	}
-	defer genClient.Close()
-
-	model := genClient.GenerativeModel("gemini-1.5-flash")
-	model.SetTemperature(0.2)
-	model.SetMaxOutputTokens(1200)
-
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
-	if err != nil {
-		return "", err
-	}
-
-	var sb strings.Builder
-	for _, cand := range resp.Candidates {
-		if cand.Content != nil {
-			for _, part := range cand.Content.Parts {
-				sb.WriteString(fmt.Sprintf("%v", part))
-			}
-		}
-	}
-
-	return strings.TrimSpace(sb.String()), nil
+	_ = ctx
+	_ = cfg
+	_ = query
+	_ = topK
+	return nil, fmt.Errorf("unfiltered Vertex retrieve is disabled; use knowledge.RetrieveFiltered (ADR-0002)")
 }

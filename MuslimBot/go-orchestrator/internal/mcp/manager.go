@@ -57,14 +57,20 @@ type serverConn struct {
 // Manager is the MCP host. Connections are lazy: a server that is down or
 // misconfigured never blocks orchestrator startup — it just yields no tools.
 type Manager struct {
-	servers map[string]*serverConn
-	order   []string
+	servers    map[string]*serverConn
+	order      []string
+	writeGlobs []string // MCP_WRITE_TOOLS overrides for write classification (policy.go)
 }
 
 // NewManager builds the host from application config. Only enabled, sufficiently
 // configured servers are registered.
 func NewManager(cfg *config.Config) *Manager {
 	m := &Manager{servers: map[string]*serverConn{}}
+	for _, g := range strings.Split(cfg.MCPWriteTools, ",") {
+		if g = strings.ToLower(strings.TrimSpace(g)); g != "" {
+			m.writeGlobs = append(m.writeGlobs, g)
+		}
+	}
 	for _, sc := range serversFromConfig(cfg) {
 		m.order = append(m.order, sc.Name)
 		m.servers[sc.Name] = &serverConn{cfg: sc}

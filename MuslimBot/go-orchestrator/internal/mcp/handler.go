@@ -32,12 +32,16 @@ func (h *Handler) GetTools(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"tools": tools, "count": len(tools)})
 }
 
-// CallTool → POST /v1/mcp/call  {server, tool, arguments}
+// CallTool → POST /v1/mcp/call  {server, tool, arguments, confirm}
+// Confirm-first (GAP-2): a write-classified tool with confirm=false returns 428
+// with a needs_confirmation payload; the UI shows a confirmation card and re-calls
+// with confirm=true. Reads pass through untouched.
 func (h *Handler) CallTool(c *gin.Context) {
 	var req struct {
 		Server    string                 `json:"server"`
 		Tool      string                 `json:"tool"`
 		Arguments map[string]interface{} `json:"arguments"`
+		Confirm   bool                   `json:"confirm"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
@@ -45,6 +49,17 @@ func (h *Handler) CallTool(c *gin.Context) {
 	}
 	if req.Server == "" || req.Tool == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "server and tool are required"})
+		return
+	}
+	if h.mgr.IsWrite(req.Server, req.Tool) && !req.Confirm {
+		c.JSON(http.StatusPreconditionRequired, gin.H{
+			"needs_confirmation": true,
+			"server":             req.Server,
+			"tool":               req.Tool,
+			"arguments":          req.Arguments,
+			"summary":            req.Server + " · " + req.Tool,
+			"details":            "This MCP tool changes state. Re-call with confirm=true after user approval.",
+		})
 		return
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)

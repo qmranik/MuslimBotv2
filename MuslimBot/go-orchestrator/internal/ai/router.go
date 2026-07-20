@@ -32,6 +32,36 @@ func NewRouter(cfg *config.Config, mgr *mcp.Manager) *Router {
 	return &Router{config: cfg, mcp: mgr}
 }
 
+// toolEvent is a single tool interaction surfaced to the UI so agent actions are
+// visible instead of silent (GAP-3).
+type toolEvent struct {
+	Server string `json:"server,omitempty"`
+	Tool   string `json:"tool"`
+	Status string `json:"status"` // ok | error | pending
+	Detail string `json:"detail,omitempty"`
+}
+
+// pendingAction is a write the agent wants to perform but must not run without
+// explicit user confirmation. The UI renders it as a confirmation card and, on
+// approval, re-issues the call with confirm=true.
+type pendingAction struct {
+	Kind      string         `json:"kind"` // "mcp"
+	Server    string         `json:"server,omitempty"`
+	Tool      string         `json:"tool"`
+	Arguments map[string]any `json:"arguments,omitempty"`
+	Summary   string         `json:"summary"`
+}
+
+// chatResponse is the structured envelope returned by /v1/ai/chat (GAP-3).
+// `blocks` is reserved for future descriptor rendering; today the UI renders
+// `response` prose, the `tool_events` trail, and any `pending_action` card.
+type chatResponse struct {
+	Response      string            `json:"response"`
+	Blocks        []json.RawMessage `json:"blocks,omitempty"`
+	ToolEvents    []toolEvent       `json:"tool_events,omitempty"`
+	PendingAction *pendingAction    `json:"pending_action,omitempty"`
+}
+
 func (r *Router) ChatHandler(c *gin.Context) {
 	var req struct {
 		Prompt string `json:"prompt"`
@@ -47,7 +77,8 @@ func (r *Router) ChatHandler(c *gin.Context) {
 		return
 	}
 	if apiKey == "mock-key" {
-		c.JSON(http.StatusOK, gin.H{"response": "- Manage inventory\n- Automate billing\n- Generate reports"})
+		// Dev-only canned reply (MustValidate rejects mock-key in production).
+		c.JSON(http.StatusOK, chatResponse{Response: "- Manage inventory\n- Automate billing\n- Generate reports"})
 		return
 	}
 
@@ -73,7 +104,11 @@ func (r *Router) ChatHandler(c *gin.Context) {
 		return
 	}
 
-	// Function-calling loop: execute MCP tools the model requests, feed results back.
+	var toolEvents []toolEvent
+	var pending *pendingAction
+
+	// Function-calling loop: reads execute inline; a write MCP call is NOT
+	// executed — it becomes a pending_action for the user to confirm (GAP-2/3).
 	for turn := 0; toolsEnabled && turn < maxToolTurns; turn++ {
 		calls := functionCalls(resp)
 		if len(calls) == 0 {
@@ -81,19 +116,66 @@ func (r *Router) ChatHandler(c *gin.Context) {
 		}
 		var responses []genai.Part
 		for _, fc := range calls {
-			responses = append(responses, genai.FunctionResponse{
-				Name:     fc.Name,
-				Response: r.executeTool(ctx, fc),
-			})
+			if fc.Name == "mcp_call" {
+				server, _ := fc.Args["server"].(string)
+				tool, _ := fc.Args["tool"].(string)
+				if server != "" && tool != "" && r.mcp.IsWrite(server, tool) {
+					args := parseMCPArgs(fc)
+					pending = &pendingAction{
+						Kind: "mcp", Server: server, Tool: tool,
+						Arguments: args, Summary: server + " · " + tool,
+					}
+					toolEvents = append(toolEvents, toolEvent{
+						Server: server, Tool: tool, Status: "pending",
+						Detail: "awaiting user confirmation",
+					})
+					responses = append(responses, genai.FunctionResponse{
+						Name: fc.Name,
+						Response: map[string]any{
+							"status": "awaiting_user_confirmation",
+							"note":   "Do not retry. The user must confirm this write in the UI before it runs.",
+						},
+					})
+					continue
+				}
+			}
+			out := r.executeTool(ctx, fc)
+			status := "ok"
+			if _, isErr := out["error"]; isErr {
+				status = "error"
+			}
+			ev := toolEvent{Tool: fc.Name, Status: status}
+			if fc.Name == "mcp_call" {
+				ev.Server, _ = fc.Args["server"].(string)
+				ev.Tool, _ = fc.Args["tool"].(string)
+			}
+			toolEvents = append(toolEvents, ev)
+			responses = append(responses, genai.FunctionResponse{Name: fc.Name, Response: out})
 		}
 		resp, err = cs.SendMessage(ctx, responses...)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed during tool execution"})
 			return
 		}
+		if pending != nil {
+			break // stop and let the user confirm the write
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"response": collectText(resp)})
+	c.JSON(http.StatusOK, chatResponse{
+		Response:      collectText(resp),
+		ToolEvents:    toolEvents,
+		PendingAction: pending,
+	})
+}
+
+// parseMCPArgs extracts the arguments map from an mcp_call function call.
+func parseMCPArgs(fc genai.FunctionCall) map[string]any {
+	args := map[string]any{}
+	if raw, ok := fc.Args["arguments_json"].(string); ok && strings.TrimSpace(raw) != "" {
+		_ = json.Unmarshal([]byte(raw), &args)
+	}
+	return args
 }
 
 // executeTool runs one function call against the MCP manager and returns a

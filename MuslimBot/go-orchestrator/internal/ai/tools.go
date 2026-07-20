@@ -107,6 +107,13 @@ func mapArgs(tool string, in map[string]any) map[string]any {
 	return out
 }
 
+// NormalizeArgs exposes the server-side argument mapping (mapArgs) so callers
+// can show the exact parameters a write tool will run with, before the user
+// confirms it. This is the "server truth" the confirmation card must display.
+func NormalizeArgs(tool string, in map[string]any) map[string]any {
+	return mapArgs(tool, in)
+}
+
 // Executor runs catalog tools server-side against the appropriate backend.
 type Executor struct {
 	frappe *FrappeClient

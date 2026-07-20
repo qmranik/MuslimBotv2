@@ -161,7 +161,7 @@ func (b *Brain) ToolExecuteHandler(c *gin.Context) {
 			"error":   "write tools require durable confirmation",
 			"tool":    req.Tool,
 			"kind":    "write",
-			"details": "Use POST /v1/agent/tool-actions then POST /v1/agent/tool-actions/:id/confirm",
+			"details": "Browsers: POST /v1/tool-actions then POST /v1/tool-actions/:id/confirm. Voice workers: /v1/agent/tool-actions.",
 		})
 		return
 	}

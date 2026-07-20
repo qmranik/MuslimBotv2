@@ -41,6 +41,10 @@ type ToolAction struct {
 	Status           string     `gorm:"default:'pending_confirmation';index" json:"status"`
 	IdempotencyKey   string     `gorm:"uniqueIndex" json:"idempotency_key"`
 	ActingUser       string     `json:"acting_user"`
+	// ActorKind separates browser confirmations (human) from LiveKit worker
+	// confirmations (workload) so the two planes cannot confirm each other's
+	// actions while sharing one audit trail (GAP-9).
+	ActorKind        string     `gorm:"index;default:'workload'" json:"actor_kind"`
 	ResultJSON       string     `gorm:"type:text" json:"result_json"`
 	Error            string     `gorm:"type:text" json:"error"`
 	ConfirmEvidence  string     `gorm:"type:text" json:"confirm_evidence"`

@@ -79,6 +79,12 @@ type Config struct {
 	// It reuses ChatwootURL + ChatwootAPIToken (CHATWOOT_BASE_URL / CHATWOOT_API_TOKEN).
 	ChatwootMCPEnabled bool
 
+	// MCPWriteTools is a comma-separated allowlist of glob patterns (matched against
+	// "server:tool" and bare "tool") that force an MCP tool to be treated as a
+	// state-changing WRITE — routed through user confirmation (GAP-2). A verb
+	// heuristic covers the common cases; this list handles exceptions.
+	MCPWriteTools string
+
 	AuthentikInternalURL string
 
 	// AuthLocalBypass gates the dev-only "inject Administrator when headers are
@@ -171,6 +177,7 @@ func LoadConfig() *Config {
 		TryPostMCPEnabled: envOr("TRYPOST_MCP_ENABLED", "false") == "true",
 
 		ChatwootMCPEnabled: envOr("CHATWOOT_MCP_ENABLED", "false") == "true",
+		MCPWriteTools:      os.Getenv("MCP_WRITE_TOOLS"),
 
 		AuthentikInternalURL: envOr("AUTHENTIK_INTERNAL_URL", "http://authentik-server:9000"),
 
