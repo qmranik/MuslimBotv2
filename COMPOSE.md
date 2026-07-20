@@ -202,10 +202,21 @@ Root template: [`MuslimBot/.env.template`](MuslimBot/.env.template).
 
 KB / voice APIs (Go only):
 
-- `POST /v1/kb/sources/*` — ingestion
-- `POST /v1/kb/retrieve`, `POST /v1/kb/chat` — RAG
-- `POST /v1/kb/voice/session` — browser token + named agent dispatch
+- `POST /v1/kb/sources/*` — ingestion (metadata-tagged GCS → Vertex v2 corpus)
+- `POST /v1/kb/retrieve`, `POST /v1/kb/chat` — tenant-filtered Vertex RAG (ADR-0002)
+- `POST /v1/kb/voice/session` — browser token + named agent dispatch (workload JWT in dispatch metadata only)
+- `GET /v1/kb/voice-brief`, `POST /v1/kb/voice-brief/rebuild` — generation-versioned warm context
+- `POST /v1/agent/kb/retrieve`, `GET /v1/agent/kb/context` — workload JWT retrieval + watcher context
+- `POST /v1/agent/sessions/heartbeat|end` — voice session lifecycle
+- Redis Stream `kb:events:<tenant>` — mid-call KB generation fan-out
 - `POST /v1/agent/tool-actions` — durable confirmed ERP tools for the voice worker
+
+Required Vertex env (Go): `GCP_PROJECT_ID`, `GCP_LOCATION`, `GCS_BUCKET_NAME`,
+`GCP_RAG_CORPUS_ID_V2` (or legacy `GCP_RAG_CORPUS_ID`), `RAG_ALLOW_UNFILTERED=false`.
+
+Standalone voice compose expects external network `liteerp_smb-net` (or
+`liteerp_smb-net-local` when using local compose). Align network names before
+attaching the worker.
 
 ---
 

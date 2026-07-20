@@ -320,8 +320,11 @@ services:
       dockerfile: Dockerfile
       args:
         # NEXT_PUBLIC_* are inlined at build time (see the Dockerfile).
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.${PUBLIC_DOMAIN:-smb.localhost}}
+        # API URL stays EMPTY → browser calls same-origin /v1/* which next.config.ts
+        # rewrites to ORCHESTRATOR_URL (the orchestrator has no CORS layer).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
         NEXT_PUBLIC_AUTHENTIK_URL: ${NEXT_PUBLIC_AUTHENTIK_URL:-https://auth.${PUBLIC_DOMAIN:-smb.localhost}}
+        ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://go-orchestrator:8080}
     image: ${REGISTRY:-localhost}/generative-ui:${IMAGE_TAG:-latest}
     container_name: gcp-generative-ui
     restart: unless-stopped

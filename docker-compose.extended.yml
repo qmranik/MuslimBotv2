@@ -203,13 +203,23 @@ services:
       CHATWOOT_MCP_ENABLED: ${CHATWOOT_MCP_ENABLED:-true}
       AUTHENTIK_INTERNAL_URL: "http://authentik-server:9000"
       GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
-      GCP_LOCATION: ${GCP_LOCATION:-}
+      GCP_LOCATION: ${GCP_LOCATION:-us-central1}
       GCS_BUCKET_NAME: ${GCS_BUCKET_NAME:-}
       GCP_RAG_CORPUS_ID: ${GCP_RAG_CORPUS_ID:-}
-      REDIS_URL: ${REDIS_URL:-redis://redis-cache:6379/2}
+      GCP_RAG_CORPUS_ID_V2: ${GCP_RAG_CORPUS_ID_V2:-}
+      RAG_TENANCY_MODE: ${RAG_TENANCY_MODE:-shared_metadata}
+      RAG_METADATA_SCHEMA_VERSION: ${RAG_METADATA_SCHEMA_VERSION:-2}
+      RAG_ALLOW_UNFILTERED: ${RAG_ALLOW_UNFILTERED:-false}
+      KB_EVENT_STREAM_PREFIX: ${KB_EVENT_STREAM_PREFIX:-kb:events:}
+      KB_BRIEF_TTL_SEC: ${KB_BRIEF_TTL_SEC:-86400}
+      KB_RETRIEVE_CACHE_TTL_SEC: ${KB_RETRIEVE_CACHE_TTL_SEC:-60}
+      KB_EVENT_STREAM_MAXLEN: ${KB_EVENT_STREAM_MAXLEN:-5000}
+      REDIS_URL: ${REDIS_URL:-redis://platform-redis:6379/2}
     depends_on:
       platform-postgres:
         condition: service_healthy
+      platform-redis:
+        condition: service_started
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.orchestrator.rule=Host(`api.${PUBLIC_DOMAIN:-smb.localhost}`)"
@@ -313,6 +323,11 @@ services:
       - "traefik.http.routers.frappe.entrypoints=websecure"
       - "traefik.http.routers.frappe.tls=true"
       - "traefik.http.services.frappe.loadbalancer.server.port=8000"
+      # Frappe Builder route
+      - "traefik.http.routers.frappe-builder.rule=Host(`builder.${PUBLIC_DOMAIN:-smb.localhost}`)"
+      - "traefik.http.routers.frappe-builder.entrypoints=websecure"
+      - "traefik.http.routers.frappe-builder.tls=true"
+      - "traefik.http.services.frappe-builder.loadbalancer.server.port=8000"
     networks:
       - platform-net
 
@@ -362,23 +377,6 @@ services:
     networks:
       - platform-net
 
-  # ── Frappe / ERPNext ─────────────────────────────────────────────────────────
-  # Override frappe-web to add Traefik labels for builder sub-domain.
-  frappe-web:
-    labels:
-      - "traefik.enable=true"
-      # Main ERP route (already defined in base compose — we add builder here)
-      - "traefik.http.routers.frappe.rule=Host(`erp.${PUBLIC_DOMAIN:-smb.localhost}`)"
-      - "traefik.http.routers.frappe.entrypoints=websecure"
-      - "traefik.http.routers.frappe.tls=true"
-      - "traefik.http.services.frappe.loadbalancer.server.port=8000"
-      # Frappe Builder route
-      - "traefik.http.routers.frappe-builder.rule=Host(`builder.${PUBLIC_DOMAIN:-smb.localhost}`)"
-      - "traefik.http.routers.frappe-builder.entrypoints=websecure"
-      - "traefik.http.routers.frappe-builder.tls=true"
-      - "traefik.http.services.frappe-builder.loadbalancer.server.port=8000"
-    networks:
-      - platform-net
 
 volumes:
   platform_pg_data:

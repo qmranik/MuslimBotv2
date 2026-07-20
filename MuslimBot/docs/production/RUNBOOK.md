@@ -1,5 +1,11 @@
 # MuslimBot — Environment Setup Runbook (post-VM)
 
+> **For a fully self-contained, agent-executable end-to-end deployment** (terraform → unified
+> system → seeded demo business → credentials handoff) use
+> [`AGENT_DEPLOYMENT_GUIDE.md`](AGENT_DEPLOYMENT_GUIDE.md). This runbook remains the deeper
+> per-step reference. Note: hostnames here that read `chat.`/`workflow.`/`app.` are stale —
+> the compose truth is `chatwoot.` / `n8n.` / `ui.` (see the guide's hostname table).
+
 **One runbook.** You have already created the VM (`terraform apply` in
 `terraform/single-host/`). This takes you from a **bare VM** to a **fully wired,
 verified MuslimBot environment** serving businesses. Follow it top-to-bottom on the VM.
@@ -205,6 +211,23 @@ Then run `TEST_PLAN_GENUI_ORCHESTRATOR.md` §A–G against the live domain. **Go
 - [ ] Forged `X-authentik-email` from a non-Traefik peer → 401 (G2).
 - [ ] No `changeme`/blank secrets (`MustValidate` passes); backups run **and a restore was drilled**.
 - [ ] ≥1 business onboarded and tenant-isolated. **No HA claimed.**
+
+---
+
+## 10b. Knowledge Base cutover (ADR-0002 shared corpus)
+
+1. Set in secrets env: `GCP_PROJECT_ID`, `GCP_LOCATION`, `GCS_BUCKET_NAME`,
+   `GCP_RAG_CORPUS_ID_V2`, `RAG_ALLOW_UNFILTERED=false`, `REDIS_URL`.
+2. Apply SQL: `go-orchestrator/migrations/20260718_kb_tenancy_v2.sql`.
+3. Provision Vertex v2 corpus with metadata schema (`tenant_id`, `visibility`,
+   `source_id`, `source_revision`, `schema_version`).
+4. Re-import existing sources (staff upload/sync) so every RagFile has metadata.
+5. Confirm `GET /v1/kb/health` reports `filtered_retrieval: true`.
+6. Run [`../testing/TEST_PLAN_REALTIME_KB_TENANT_ISOLATION.md`](../testing/TEST_PLAN_REALTIME_KB_TENANT_ISOLATION.md).
+7. Keep legacy `GCP_RAG_CORPUS_ID` read-only until rollback window closes.
+
+Voice workers consume Redis Stream `kb:events:<tenant>` and call
+`/v1/agent/kb/context` + `update_instructions` mid-call.
 
 ---
 

@@ -14,7 +14,9 @@ The Go orchestrator is the sole owner of:
 - Durable confirmed ERP tools for voice (`/v1/agent/tool-actions`)
 
 The Python package is a LiveKit + Gemini Live worker only. It authenticates to
-Go with a session-bound workload JWT embedded in LiveKit dispatch metadata.
+Go with a session-bound workload JWT embedded in **agent dispatch metadata only**
+(not browser-visible participant metadata). See ADR-0002 for shared-corpus
+tenant filters and Redis Stream mid-call KB refresh.
 
 ## Callers
 
@@ -24,6 +26,12 @@ Go with a session-bound workload JWT embedded in LiveKit dispatch metadata.
 | `/kb-api/*` GenUI proxy | `/v1/kb/*` via GenUI rewrite / `NEXT_PUBLIC_API_URL` |
 | `KB_BFF_API_KEY` / `X-KB-API-Key` | `ORCHESTRATOR_SERVICE_API_KEY` / `X-Service-API-Key` (services) |
 | Worker direct Frappe calls | `/v1/agent/tool-actions` with confirmation |
+
+## Alias sunset
+
+Deprecated env aliases `KBBFF_API_KEY` / `KB_BFF_API_KEY` / `KBBFF_URL` remain
+for one release window after 2026-07-18. Prefer `ORCHESTRATOR_SERVICE_API_KEY`
+and `WORKLOAD_JWT_SECRET`. Remove aliases once all compose/templates are cut over.
 
 ## Rollback
 
