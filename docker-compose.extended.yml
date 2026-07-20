@@ -333,11 +333,13 @@ services:
       - "traefik.http.routers.frappe.rule=Host(`erp.${PUBLIC_DOMAIN:-smb.localhost}`) || Host(`hrms.${PUBLIC_DOMAIN:-smb.localhost}`) || Host(`crm.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.frappe.entrypoints=websecure"
       - "traefik.http.routers.frappe.tls=true"
+      - "traefik.http.routers.frappe.service=frappe"
       - "traefik.http.services.frappe.loadbalancer.server.port=8000"
       # Frappe Builder route
       - "traefik.http.routers.frappe-builder.rule=Host(`builder.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.frappe-builder.entrypoints=websecure"
       - "traefik.http.routers.frappe-builder.tls=true"
+      - "traefik.http.routers.frappe-builder.service=frappe-builder"
       - "traefik.http.services.frappe-builder.loadbalancer.server.port=8000"
     networks:
       - platform-net
