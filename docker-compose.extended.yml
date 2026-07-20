@@ -233,10 +233,20 @@ services:
         condition: service_started
     labels:
       - "traefik.enable=true"
+      # Unauthenticated health router — Traefik middleware applies per-router
+      # (whole Host match), not per-path, so /v1/sys/health needs its own
+      # higher-priority router carved out of the authenticated catch-all below,
+      # or liveness/uptime checks (and setup.sh verify) would 302 to login.
+      - "traefik.http.routers.orchestrator-health.rule=Host(`api.${PUBLIC_DOMAIN:-smb.localhost}`) && Path(`/v1/sys/health`)"
+      - "traefik.http.routers.orchestrator-health.entrypoints=websecure"
+      - "traefik.http.routers.orchestrator-health.tls=true"
+      - "traefik.http.routers.orchestrator-health.priority=10"
+      - "traefik.http.routers.orchestrator-health.service=orchestrator"
       - "traefik.http.routers.orchestrator.rule=Host(`api.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.orchestrator.entrypoints=websecure"
       - "traefik.http.routers.orchestrator.tls=true"
       - "traefik.http.routers.orchestrator.middlewares=authentik-auth@file"
+      - "traefik.http.routers.orchestrator.priority=1"
       - "traefik.http.services.orchestrator.loadbalancer.server.port=8080"
     networks:
       - platform-net
