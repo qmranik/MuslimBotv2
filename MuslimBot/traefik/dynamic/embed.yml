@@ -1,0 +1,21 @@
+# traefik/dynamic/embed.yml
+# ─────────────────────────────────────────────────────────────────
+# Lets the GenUI pane frame sub-system UIs (ERP, Builder, Chatwoot, n8n,
+# TryPost) in an <iframe>. Backends default to X-Frame-Options: SAMEORIGIN,
+# which blocks framing from a different host (ui.<domain> framing erp.<domain>).
+#
+# This only strips X-Frame-Options. It intentionally does NOT set a permissive
+# Content-Security-Policy frame-ancestors, since that would need PUBLIC_DOMAIN
+# baked in and Traefik's file provider does not do compose-style ${VAR}
+# interpolation. Follow-up for a real (non-nip.io) domain: replace this with a
+# router-level customResponseHeaders label using ${PUBLIC_DOMAIN} so
+# frame-ancestors is pinned to https://ui.${PUBLIC_DOMAIN} instead of relying
+# on X-Frame-Options removal alone.
+# ─────────────────────────────────────────────────────────────────
+
+http:
+  middlewares:
+    allow-embed:
+      headers:
+        customResponseHeaders:
+          X-Frame-Options: ""

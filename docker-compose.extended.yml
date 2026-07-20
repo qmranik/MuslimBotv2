@@ -236,6 +236,7 @@ services:
       - "traefik.http.routers.orchestrator.rule=Host(`api.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.orchestrator.entrypoints=websecure"
       - "traefik.http.routers.orchestrator.tls=true"
+      - "traefik.http.routers.orchestrator.middlewares=authentik-auth@file"
       - "traefik.http.services.orchestrator.loadbalancer.server.port=8080"
     networks:
       - platform-net
@@ -341,6 +342,9 @@ services:
       - "traefik.http.routers.frappe-builder.tls=true"
       - "traefik.http.routers.frappe-builder.service=frappe-builder"
       - "traefik.http.services.frappe-builder.loadbalancer.server.port=8000"
+      # Allow the GenUI pane to frame Frappe apps (ERP, Builder)
+      - "traefik.http.routers.frappe.middlewares=allow-embed"
+      - "traefik.http.routers.frappe-builder.middlewares=allow-embed"
     networks:
       - platform-net
 
@@ -385,6 +389,7 @@ services:
       - "traefik.http.routers.genui.rule=Host(`ui.${PUBLIC_DOMAIN:-smb.localhost}`)"
       - "traefik.http.routers.genui.entrypoints=websecure"
       - "traefik.http.routers.genui.tls=true"
+      - "traefik.http.routers.genui.middlewares=authentik-auth@file"
       # Port 3000 matches Dockerfile ENV PORT=3000 (Next.js standalone)
       - "traefik.http.services.genui.loadbalancer.server.port=3000"
     networks:
