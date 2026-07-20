@@ -14,10 +14,17 @@ import {
   Maximize2,
   Wrench,
   LayoutDashboard,
+  CheckCircle2,
+  ShieldAlert,
 } from 'lucide-react';
 import GenerativeRenderer from './GenerativeRenderer';
-import type { UiDescriptor, ChatHistoryEntry } from '@/lib/api';
-import { generateUI, aiChat } from '@/lib/api';
+import type {
+  UiDescriptor,
+  ChatHistoryEntry,
+  ToolEvent,
+  PendingAction,
+} from '@/lib/api';
+import { generateUI, aiChat, mcpCall } from '@/lib/api';
 
 /* ──────────────────────────────────────────────
    TYPES
@@ -30,6 +37,10 @@ interface ChatMessage {
   timestamp: string;
   /** If the AI returned a structured UiDescriptor, store it here */
   descriptor?: UiDescriptor;
+  /** Tool calls the agent made this turn (visibility — GAP-3) */
+  toolEvents?: ToolEvent[];
+  /** A write awaiting user confirmation (GAP-2) */
+  pending?: PendingAction | null;
   /** Whether the response errored */
   isError?: boolean;
 }
@@ -138,6 +149,36 @@ function ChatBubble({
           </div>
         )}
 
+        {/* Tool-call trail (GAP-3: agent actions are visible, not silent) */}
+        {!isUser && message.toolEvents && message.toolEvents.length > 0 && (
+          <div className="mt-1 space-y-1">
+            {message.toolEvents.map((ev, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-1.5 text-[10px] text-secondary"
+              >
+                {ev.status === 'ok' ? (
+                  <CheckCircle2 size={10} className="text-success" />
+                ) : ev.status === 'error' ? (
+                  <AlertTriangle size={10} className="text-error" />
+                ) : (
+                  <Loader2 size={10} className="text-warning" />
+                )}
+                <span className="font-mono">
+                  {ev.server ? `${ev.server}·` : ''}
+                  {ev.tool}
+                </span>
+                {ev.detail && <span className="opacity-70">— {ev.detail}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pending write — confirm before it runs (GAP-2) */}
+        {!isUser && message.pending && (
+          <PendingActionCard action={message.pending} />
+        )}
+
         {/* Timestamp + actions */}
         <div
           className={`flex items-center gap-2 px-1 ${isUser ? 'justify-end' : ''}`}
@@ -156,6 +197,87 @@ function ChatBubble({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Confirmation card for an agent-proposed MCP write (e.g. schedule/publish a
+// post, assign a conversation). Nothing runs until the user approves; approval
+// re-issues the call with confirm=true.
+function PendingActionCard({ action }: { action: PendingAction }) {
+  const [state, setState] = useState<'idle' | 'running' | 'done' | 'error'>(
+    'idle'
+  );
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const run = async () => {
+    setState('running');
+    try {
+      const res = await mcpCall(
+        action.server ?? '',
+        action.tool,
+        action.arguments ?? {},
+        true
+      );
+      if (res.is_error) {
+        setMsg(res.result ?? 'Tool returned an error');
+        setState('error');
+      } else {
+        setState('done');
+      }
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to run');
+      setState('error');
+    }
+  };
+
+  return (
+    <div className="mt-2 rounded-xl border border-accent-border bg-accent-muted p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <ShieldAlert size={13} className="text-accent" />
+        <span className="text-xs font-semibold text-primary">
+          Confirm action
+        </span>
+      </div>
+      <p className="mb-2 text-xs text-secondary">{action.summary}</p>
+      {action.arguments && Object.keys(action.arguments).length > 0 && (
+        <div className="mb-3 space-y-1 rounded-lg bg-surface p-2.5">
+          {Object.entries(action.arguments).map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-4 text-[11px]">
+              <span className="text-secondary">{k}</span>
+              <span className="truncate font-medium text-primary">
+                {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {state === 'idle' && (
+        <button
+          onClick={run}
+          className="w-full rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-background transition-all hover:bg-accent/80"
+        >
+          Confirm &amp; Run
+        </button>
+      )}
+      {state === 'running' && (
+        <div className="flex items-center justify-center gap-2 py-1.5">
+          <Loader2 size={13} className="animate-spin text-accent" />
+          <span className="text-[11px] text-secondary">Running…</span>
+        </div>
+      )}
+      {state === 'done' && (
+        <div className="flex items-center gap-2 rounded-lg bg-success/10 px-2.5 py-1.5">
+          <CheckCircle2 size={12} className="text-success" />
+          <span className="text-[11px] text-success">Done</span>
+        </div>
+      )}
+      {state === 'error' && (
+        <div className="flex items-center gap-2 rounded-lg bg-error/10 px-2.5 py-1.5">
+          <AlertTriangle size={12} className="text-error" />
+          <span className="text-[11px] text-error">{msg ?? 'Failed'}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -244,15 +366,21 @@ export default function AiChatPanel() {
 
         if (agentMode) {
           // MCP-capable agent: function-calling loop across ERP/Chatwoot/TryPost.
-          const response = await aiChat(text);
+          const env = await aiChat(text);
           aiMessage = {
             id: String(Date.now() + 1),
             role: 'assistant',
-            content: response,
+            content:
+              env.response ||
+              (env.pending_action
+                ? 'I need your confirmation before running this:'
+                : '…'),
             timestamp: new Date().toLocaleTimeString('en-US', {
               hour: 'numeric',
               minute: '2-digit',
             }),
+            toolEvents: env.tool_events,
+            pending: env.pending_action,
           };
         } else {
           // Dashboard mode: structured UI descriptor for data visualizations.

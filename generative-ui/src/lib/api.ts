@@ -168,21 +168,88 @@ export async function generateUI(
   });
 }
 
-/**
- * Free-form AI chat (legacy endpoint, uses function-calling loop).
- * Returns a plain text response string.
- */
-export async function aiChat(prompt: string): Promise<string> {
-  const res = await apiFetch<{ response: string }>('/v1/ai/chat', {
-    method: 'POST',
-    body: JSON.stringify({ prompt }),
-  });
-  return res.response;
+/** A single tool interaction the agent performed, surfaced for UI visibility. */
+export interface ToolEvent {
+  server?: string;
+  tool: string;
+  status: 'ok' | 'error' | 'pending';
+  detail?: string;
+}
+
+/** A write the agent wants to run but must not, until the user confirms it. */
+export interface PendingAction {
+  kind: 'mcp';
+  server?: string;
+  tool: string;
+  arguments?: Record<string, unknown>;
+  summary: string;
+}
+
+/** Structured envelope returned by POST /v1/ai/chat (see router.go chatResponse). */
+export interface ChatEnvelope {
+  response: string;
+  blocks?: UiDescriptor[];
+  tool_events?: ToolEvent[];
+  pending_action?: PendingAction | null;
 }
 
 /**
- * Execute a catalog tool (21-tool executor).
- * Write tools require confirm=true — the frontend must show a confirmation card first.
+ * Agentic AI chat. The orchestrator runs a Gemini function-calling loop over the
+ * MCP tools; reads execute inline (see `tool_events`), a write becomes a
+ * `pending_action` the UI must confirm before it runs.
+ */
+export async function aiChat(prompt: string): Promise<ChatEnvelope> {
+  return apiFetch<ChatEnvelope>('/v1/ai/chat', {
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+  });
+}
+
+// ── Durable tool-action confirmation (human write path) ────────────────────
+
+/** A prepared, server-normalized write awaiting confirmation. */
+export interface ToolAction {
+  action_id: string;
+  tool: string;
+  kind: string;
+  status: string;
+  summary: string;
+  normalized_params: Record<string, unknown>;
+  expires_at: string;
+  error?: string;
+  result_json?: string;
+  result?: ToolResult;
+}
+
+/**
+ * Prepare a catalog tool. Reads execute immediately (returns {status,result});
+ * writes create a durable ToolAction the UI must confirm — the response carries
+ * the SERVER-NORMALIZED parameters that will actually run.
+ */
+export async function prepareAction(
+  tool: string,
+  args: Record<string, unknown>
+): Promise<ToolAction | { status: 'executed'; kind: 'read'; result: ToolResult }> {
+  return apiFetch('/v1/tool-actions', {
+    method: 'POST',
+    body: JSON.stringify({ tool, arguments: args }),
+  });
+}
+
+/** Confirm (approve/reject) a prepared write. Approve executes it server-side. */
+export async function confirmAction(
+  actionId: string,
+  decision: 'approve' | 'reject' = 'approve'
+): Promise<ToolAction> {
+  return apiFetch<ToolAction>(`/v1/tool-actions/${actionId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
+  });
+}
+
+/**
+ * Execute a catalog READ tool directly (instant, no confirmation).
+ * Writes are rejected here — use prepareAction/confirmAction instead.
  */
 export async function executeTool(
   tool: string,
@@ -250,6 +317,15 @@ export interface VoiceSessionResponse {
   participant_identity: string;
   session_id?: string;
   tenant_id?: string;
+  kb_generation?: number;
+}
+
+export interface VoiceBriefResponse {
+  tenant_id: string;
+  context: string;
+  kb_generation?: number;
+  generated_at?: string;
+  digest?: string;
 }
 
 /** List all KB sources for the authenticated tenant */
@@ -290,17 +366,30 @@ export async function kbHealth(): Promise<unknown> {
 
 /** Create a LiveKit voice session (token + named agent dispatch) */
 export async function kbVoiceSession(
-  participantName = 'workspace-user'
+  participantName = 'workspace-user',
+  signal?: AbortSignal
 ): Promise<VoiceSessionResponse> {
   return apiFetch<VoiceSessionResponse>('/v1/kb/voice/session', {
     method: 'POST',
     body: JSON.stringify({ participant_name: participantName }),
+    signal,
   });
 }
 
 /** Fetch the tenant voice brief used to warm agent context */
-export async function kbVoiceBrief(): Promise<{ tenant_id: string; context: string }> {
-  return apiFetch<{ tenant_id: string; context: string }>('/v1/kb/voice-brief');
+export async function kbVoiceBrief(signal?: AbortSignal): Promise<VoiceBriefResponse> {
+  return apiFetch<VoiceBriefResponse>('/v1/kb/voice-brief', { signal });
+}
+
+/** Rebuild the generation-versioned voice brief before minting a session */
+export async function kbRebuildVoiceBrief(
+  signal?: AbortSignal
+): Promise<VoiceBriefResponse> {
+  return apiFetch<VoiceBriefResponse>('/v1/kb/voice-brief/rebuild', {
+    method: 'POST',
+    body: JSON.stringify({}),
+    signal,
+  });
 }
 
 /** Classify a URL before ingestion */
@@ -347,15 +436,31 @@ export async function mcpTools(): Promise<
   );
 }
 
-/** Call an MCP tool directly */
+/** Result of an MCP tool call. `needs_confirmation` means the tool is a write
+ *  and the call must be repeated with confirm=true after user approval. */
+export interface MCPCallResult {
+  is_error?: boolean;
+  result?: string;
+  content?: { text: string }[];
+  needs_confirmation?: boolean;
+  server?: string;
+  tool?: string;
+  summary?: string;
+}
+
+/**
+ * Call an MCP tool directly. Write-classified tools require `confirm=true`
+ * (the orchestrator returns needs_confirmation otherwise — GAP-2).
+ */
 export async function mcpCall(
   server: string,
   tool: string,
-  args: Record<string, unknown> = {}
-): Promise<{ is_error: boolean; result: string }> {
-  return apiFetch<{ is_error: boolean; result: string }>('/v1/mcp/call', {
+  args: Record<string, unknown> = {},
+  confirm = false
+): Promise<MCPCallResult> {
+  return apiFetch<MCPCallResult>('/v1/mcp/call', {
     method: 'POST',
-    body: JSON.stringify({ server, tool, arguments: args }),
+    body: JSON.stringify({ server, tool, arguments: args, confirm }),
   });
 }
 
@@ -397,7 +502,13 @@ export async function triggerWorkflow(
  * go-orchestrator/internal/portals/handler.go — note it is `trypost`, not `social`.
  * (`/workspace/social` is only the UX route name; the portal app id is `trypost`.)
  */
-export type PortalApp = 'erp-ops' | 'n8n' | 'chatwoot' | 'trypost' | 'nextcloud';
+export type PortalApp =
+  | 'erp-ops'
+  | 'builder'
+  | 'n8n'
+  | 'chatwoot'
+  | 'trypost'
+  | 'nextcloud';
 
 /** Response shape from GET /v1/portals/:app/url */
 export interface PortalResponse {

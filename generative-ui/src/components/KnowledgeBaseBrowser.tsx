@@ -7,7 +7,6 @@ import {
   Globe,
   Database,
   Clock,
-  Phone,
   X,
   BookOpen,
   Loader2,
@@ -17,11 +16,11 @@ import {
 import {
   kbChat,
   kbListSources,
-  kbVoiceSession,
   kbIngestUrl,
   kbDeleteSource,
   type KBSource,
 } from '@/lib/api';
+import VoiceCallPanel from '@/components/VoiceCallPanel';
 
 type DocSource = 'pdf' | 'web' | 'api' | 'other';
 
@@ -54,9 +53,7 @@ export default function KnowledgeBaseBrowser() {
   const [query, setQuery] = useState('');
   const [chatReply, setChatReply] = useState<string | null>(null);
   const [chatBusy, setChatBusy] = useState(false);
-  const [voiceBusy, setVoiceBusy] = useState(false);
-  const [voiceInfo, setVoiceInfo] = useState<string | null>(null);
-  
+
   const [ingestUrl, setIngestUrl] = useState('');
   const [ingestBusy, setIngestBusy] = useState(false);
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
@@ -75,9 +72,30 @@ export default function KnowledgeBaseBrowser() {
     }
   }, []);
 
+  // Initial load. State changes happen after the async boundary so we never call
+  // setState synchronously inside the effect body (React 19 / Next 16 hooks rule).
+  // `loading` already defaults to true, so no synchronous setLoading is needed.
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await kbListSources();
+        if (!cancelled) setSources(res.items || []);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : 'Failed to load knowledge sources'
+          );
+          setSources([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -127,26 +145,6 @@ export default function KnowledgeBaseBrowser() {
     }
   }
 
-  async function onCallMuslimbot() {
-    setVoiceBusy(true);
-    setVoiceInfo(null);
-    try {
-      const session = await kbVoiceSession('workspace-user');
-      setVoiceInfo(
-        `Voice session ready. Room ${session.room_name}. Connect your LiveKit client to ${session.url} with the minted token.`
-      );
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('muslimbot:voice-session', { detail: session })
-        );
-      }
-    } catch (err) {
-      setVoiceInfo(err instanceof Error ? err.message : 'Failed to start voice session');
-    } finally {
-      setVoiceBusy(false);
-    }
-  }
-
   return (
     <div className="flex h-full flex-col gap-6 p-4">
       {/* Header */}
@@ -157,15 +155,7 @@ export default function KnowledgeBaseBrowser() {
             Manage your vector database sources for RAG. Ask questions or call the AI directly.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void onCallMuslimbot()}
-          disabled={voiceBusy}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-background hover:bg-accent-hover focus:ring-2 focus:ring-accent focus:outline-none disabled:opacity-60 transition-colors shadow-sm"
-        >
-          {voiceBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
-          Call MuslimBot
-        </button>
+        <VoiceCallPanel showStartButton />
       </div>
 
       {/* Main Grid: Left Search/Results, Right Ingest */}
@@ -199,11 +189,6 @@ export default function KnowledgeBaseBrowser() {
           {error && (
             <div className="rounded-lg border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
               {error}
-            </div>
-          )}
-          {voiceInfo && (
-            <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-              {voiceInfo}
             </div>
           )}
           {chatReply && (

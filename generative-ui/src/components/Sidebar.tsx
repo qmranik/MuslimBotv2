@@ -12,6 +12,7 @@ import {
   Headset,
   Megaphone,
   Workflow,
+  Globe,
 } from 'lucide-react';
 import { authMe, type AuthMe } from '@/lib/api';
 
@@ -22,6 +23,7 @@ const NAV = [
   { href: '/support', icon: Headset, label: 'Support' },
   { href: '/marketing', icon: Megaphone, label: 'Marketing' },
   { href: '/workflows', icon: Workflow, label: 'Workflows' },
+  { href: '/site', icon: Globe, label: 'Website' },
   { href: '/agent', icon: Sparkles, label: 'Voice Agent' },
 ] as const;
 

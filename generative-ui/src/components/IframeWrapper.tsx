@@ -24,6 +24,7 @@ type Phase = 'fetching' | 'loading' | 'ready' | 'error';
 
 const LABELS: Record<PortalApp, string> = {
   'erp-ops': 'ERP Operations',
+  builder: 'Website Builder',
   n8n: 'Workflows',
   chatwoot: 'Support',
   trypost: 'Social',

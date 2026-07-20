@@ -9,10 +9,15 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Bake public config into the client bundle.
-ARG NEXT_PUBLIC_API_URL
+# Leave NEXT_PUBLIC_API_URL EMPTY to use the same-origin /v1/* rewrite (next.config.ts)
+# proxied to ORCHESTRATOR_URL — the orchestrator has no CORS, so same-origin is the
+# working path. ORCHESTRATOR_URL is baked into the rewrite at build time.
+ARG NEXT_PUBLIC_API_URL=""
 ARG NEXT_PUBLIC_AUTHENTIK_URL
+ARG ORCHESTRATOR_URL="http://go-orchestrator:8080"
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ENV NEXT_PUBLIC_AUTHENTIK_URL=${NEXT_PUBLIC_AUTHENTIK_URL}
+ENV ORCHESTRATOR_URL=${ORCHESTRATOR_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY package.json package-lock.json ./

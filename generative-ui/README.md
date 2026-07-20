@@ -7,6 +7,7 @@ The Command Center is a Next.js 16 (App Router) single pane of glass for the Mus
 This frontend is designed to run behind a central Go orchestrator (`/v1/*`), which acts as an MCP host and AI brain.
 - **Never put Frappe/Gemini/MCP secrets in the browser.** All secure interactions happen via the orchestrator.
 - **SSO Embeds:** Portals are embedded via cross-origin iframes using secure, one-time SSO links provisioned by the orchestrator.
+- **Voice:** `VoiceCallPanel` rebuilds the tenant voice brief (`POST /v1/kb/voice-brief/rebuild`) before minting a LiveKit session (`POST /v1/kb/voice/session`), then connects with `livekit-client`. Mid-call KB refresh status arrives on LiveKit data topic `kb-context`.
 
 ## Environment Variables
 

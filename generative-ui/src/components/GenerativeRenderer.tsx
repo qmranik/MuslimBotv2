@@ -18,8 +18,8 @@ import {
   AlertTriangle,
   Loader2,
 } from 'lucide-react';
-import type { UiDescriptor, ToolResult } from '@/lib/api';
-import { executeTool } from '@/lib/api';
+import type { UiDescriptor, ToolResult, ToolAction } from '@/lib/api';
+import { prepareAction, confirmAction } from '@/lib/api';
 
 /* ──────────────────────────────────────────────
    SCHEMA VALIDATION
@@ -42,7 +42,7 @@ const uiDescriptorSchema = z.object({
   explanation: z.string().optional(),
   chartType: z.enum(['bar', 'line', 'area', 'pie']).optional(),
   columns: z.array(z.object({ key: z.string(), label: z.string() })).optional(),
-  data: z.array(z.record(z.unknown())).optional(),
+  data: z.array(z.record(z.string(), z.unknown())).optional(),
   metrics: z.array(
     z.object({
       label: z.string(),
@@ -57,7 +57,7 @@ const uiDescriptorSchema = z.object({
     details: z.array(z.object({ label: z.string(), value: z.string() })).optional()
   }).optional(),
   actionType: z.string().optional(),
-  actionParams: z.record(z.unknown()).optional(),
+  actionParams: z.record(z.string(), z.unknown()).optional(),
   missingFields: z.array(z.string()).optional(),
   target: z.string().optional(),
   url: z.string().optional(),
@@ -324,35 +324,81 @@ function CardComponent({ descriptor }: { descriptor: UiDescriptor }) {
 
 /* ── Action (Write Tool Confirmation) ──────────────────────────────────── */
 
+// Two-step write confirmation (W1). "Review" prepares a durable, server-normalized
+// ToolAction; "Confirm" executes it via /v1/tool-actions/:id/confirm. The card
+// shows the SERVER's normalized parameters — the exact thing that will run — not
+// the client's guess. Nothing mutates business state before Confirm.
 function ActionComponent({ descriptor }: { descriptor: UiDescriptor }) {
-  const [state, setState] = useState<'idle' | 'loading' | 'success' | 'error'>(
-    'idle'
-  );
+  const [state, setState] = useState<
+    'intent' | 'preparing' | 'prepared' | 'executing' | 'success' | 'error'
+  >('intent');
+  const [action, setAction] = useState<ToolAction | null>(null);
   const [result, setResult] = useState<ToolResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<Record<string, string>>({});
 
-  const hasMissing = descriptor.missingFields && descriptor.missingFields.length > 0;
+  const hasMissing =
+    !!descriptor.missingFields && descriptor.missingFields.length > 0;
+  const missingUnfilled =
+    hasMissing &&
+    descriptor.missingFields!.some((f) => !(formValues[f] ?? '').trim());
 
-  const handleConfirm = async () => {
+  const handleReview = async () => {
     if (!descriptor.actionType) return;
-    setState('loading');
+    setState('preparing');
+    setErrorMsg(null);
     try {
-      const params = {
-        ...(descriptor.actionParams ?? {}),
-        ...formValues,
-      };
-      const res = await executeTool(descriptor.actionType, params, true);
-      setResult(res);
-      setState(res.ok ? 'success' : 'error');
+      const params = { ...(descriptor.actionParams ?? {}), ...formValues };
+      const res = await prepareAction(descriptor.actionType, params);
+      if ('action_id' in res) {
+        setAction(res);
+        setState('prepared');
+      } else if ('result' in res) {
+        // Read executed instantly (defensive — action descriptors are writes).
+        setResult(res.result);
+        setState(res.result.ok ? 'success' : 'error');
+      }
     } catch (err) {
-      setResult({
-        tool: descriptor.actionType ?? '',
-        ok: false,
-        error: err instanceof Error ? err.message : 'Unknown error',
-      });
+      setErrorMsg(err instanceof Error ? err.message : 'Could not prepare action');
       setState('error');
     }
   };
+
+  const handleConfirm = async () => {
+    if (!action) return;
+    setState('executing');
+    try {
+      const done = await confirmAction(action.action_id, 'approve');
+      setAction(done);
+      if (done.status === 'executed') {
+        setState('success');
+      } else {
+        setErrorMsg(done.error ?? `Action ${done.status}`);
+        setState('error');
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Confirmation failed');
+      setState('error');
+    }
+  };
+
+  const handleCancel = async () => {
+    if (action) {
+      try {
+        await confirmAction(action.action_id, 'reject');
+      } catch {
+        /* best-effort */
+      }
+    }
+    setState('intent');
+    setAction(null);
+  };
+
+  // Which params to show: server-normalized once prepared, else the intent.
+  const shownParams =
+    action?.normalized_params ??
+    (descriptor.actionParams as Record<string, unknown> | undefined) ??
+    {};
 
   return (
     <div className="space-y-3">
@@ -360,29 +406,37 @@ function ActionComponent({ descriptor }: { descriptor: UiDescriptor }) {
         <div className="mb-3 flex items-center gap-2">
           <Play size={14} className="text-accent" />
           <h3 className="text-sm font-semibold text-primary">
-            {descriptor.title ?? `Action: ${descriptor.actionType}`}
+            {action?.summary ??
+              descriptor.title ??
+              `Action: ${descriptor.actionType}`}
           </h3>
         </div>
 
-        {descriptor.explanation && (
+        {descriptor.explanation && state === 'intent' && (
           <p className="mb-3 text-xs text-secondary">{descriptor.explanation}</p>
         )}
 
-        {/* Show action parameters */}
-        {descriptor.actionParams &&
-          Object.keys(descriptor.actionParams).length > 0 && (
-            <div className="mb-3 space-y-1.5 rounded-lg bg-surface p-3">
-              {Object.entries(descriptor.actionParams).map(([key, val]) => (
-                <div key={key} className="flex justify-between text-xs">
-                  <span className="text-secondary">{key}</span>
-                  <span className="font-medium text-primary">{String(val)}</span>
-                </div>
-              ))}
-            </div>
-          )}
+        {state === 'prepared' && (
+          <p className="mb-2 text-[10px] uppercase tracking-wider text-accent">
+            Review — this is exactly what will run
+          </p>
+        )}
 
-        {/* Missing fields form */}
-        {hasMissing && state === 'idle' && (
+        {Object.keys(shownParams).length > 0 && state !== 'success' && (
+          <div className="mb-3 space-y-1.5 rounded-lg bg-surface p-3">
+            {Object.entries(shownParams).map(([key, val]) => (
+              <div key={key} className="flex justify-between gap-4 text-xs">
+                <span className="text-secondary">{key}</span>
+                <span className="truncate font-medium text-primary">
+                  {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Missing fields form (before review) */}
+        {hasMissing && state === 'intent' && (
           <div className="mb-3 space-y-2">
             <p className="text-[10px] uppercase tracking-wider text-warning">
               Missing required fields
@@ -404,37 +458,70 @@ function ActionComponent({ descriptor }: { descriptor: UiDescriptor }) {
           </div>
         )}
 
-        {/* Action buttons */}
-        {state === 'idle' && (
+        {state === 'intent' && (
           <button
-            onClick={handleConfirm}
-            disabled={hasMissing && Object.values(formValues).some((v) => !v.trim())}
+            onClick={handleReview}
+            disabled={missingUnfilled}
             className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-background transition-all hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Confirm & Execute
+            Review action
           </button>
         )}
 
-        {state === 'loading' && (
+        {state === 'preparing' && (
           <div className="flex items-center justify-center gap-2 py-2">
             <Loader2 size={16} className="animate-spin text-accent" />
-            <span className="text-xs text-secondary">Executing...</span>
+            <span className="text-xs text-secondary">Preparing…</span>
+          </div>
+        )}
+
+        {state === 'prepared' && (
+          <div className="flex gap-2">
+            <button
+              onClick={handleConfirm}
+              className="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-background transition-all hover:bg-accent/80"
+            >
+              Confirm &amp; Execute
+            </button>
+            <button
+              onClick={handleCancel}
+              className="rounded-lg border border-divider px-4 py-2.5 text-sm text-secondary transition-colors hover:text-primary"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {state === 'executing' && (
+          <div className="flex items-center justify-center gap-2 py-2">
+            <Loader2 size={16} className="animate-spin text-accent" />
+            <span className="text-xs text-secondary">Executing…</span>
           </div>
         )}
 
         {state === 'success' && (
           <div className="flex items-center gap-2 rounded-lg bg-success/10 px-3 py-2">
             <CheckCircle2 size={14} className="text-success" />
-            <span className="text-xs text-success">Action completed successfully</span>
+            <span className="text-xs text-success">
+              Done{action?.action_id ? ` · ${action.action_id}` : ''}
+            </span>
           </div>
         )}
 
         {state === 'error' && (
-          <div className="flex items-center gap-2 rounded-lg bg-error/10 px-3 py-2">
-            <AlertTriangle size={14} className="text-error" />
-            <span className="text-xs text-error">
-              {result?.error ?? 'Action failed'}
-            </span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 rounded-lg bg-error/10 px-3 py-2">
+              <AlertTriangle size={14} className="text-error" />
+              <span className="text-xs text-error">
+                {errorMsg ?? result?.error ?? 'Action failed'}
+              </span>
+            </div>
+            <button
+              onClick={() => setState('intent')}
+              className="text-xs text-secondary hover:text-primary"
+            >
+              Try again
+            </button>
           </div>
         )}
       </div>
