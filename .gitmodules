@@ -1,3 +1,9 @@
 [submodule "vendor/trypost"]
 	path = vendor/trypost
 	url = https://github.com/trypostit/trypost
+[submodule "MuslimBot/mcp-servers/chatwoot-mcp/vendor/mcp-chatwoot"]
+	path = MuslimBot/mcp-servers/chatwoot-mcp/vendor/mcp-chatwoot
+	url = https://github.com/fazer-ai/mcp-chatwoot
+[submodule "MuslimBot/mcp-servers/chatwoot-mcp/vendor/chatwoot-skills"]
+	path = MuslimBot/mcp-servers/chatwoot-mcp/vendor/chatwoot-skills
+	url = https://github.com/fazer-ai/chatwoot-skills

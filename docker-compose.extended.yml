@@ -200,7 +200,11 @@ services:
       TRYPOST_MCP_ENABLED: ${TRYPOST_MCP_ENABLED:-true}
       TRYPOST_API_TOKEN: ${TRYPOST_API_TOKEN:-}
       # Chatwoot agentic layer via fazer-ai/mcp-chatwoot (stdio subprocess; reuses CHATWOOT_URL + CHATWOOT_API_TOKEN).
+      # CWD mirrors the source repo's scripts/ + mcp-servers/ layout under /opt/mcp so the
+      # launcher's dirname-based path resolution (scripts/mcp/run-chatwoot-mcp.sh -> ../..) works.
       CHATWOOT_MCP_ENABLED: ${CHATWOOT_MCP_ENABLED:-true}
+      MCP_CHATWOOT_CWD: /opt/mcp
+      MCP_CHATWOOT_COMMAND: "bash scripts/mcp/run-chatwoot-mcp.sh"
       AUTHENTIK_INTERNAL_URL: "http://authentik-server:9000"
       GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
       GCP_LOCATION: ${GCP_LOCATION:-us-central1}
@@ -215,6 +219,13 @@ services:
       KB_RETRIEVE_CACHE_TTL_SEC: ${KB_RETRIEVE_CACHE_TTL_SEC:-60}
       KB_EVENT_STREAM_MAXLEN: ${KB_EVENT_STREAM_MAXLEN:-5000}
       REDIS_URL: ${REDIS_URL:-redis://platform-redis:6379/2}
+    volumes:
+      # Chatwoot MCP (fazer-ai/mcp-chatwoot, stdio) — bind-mounted read-write so `bun
+      # install` can write node_modules; source lives in a submodule outside the image
+      # build context (ADR-0001 §7). Layout mirrors the repo so the launcher's
+      # dirname-based path resolution works unmodified.
+      - ./MuslimBot/scripts:/opt/mcp/scripts:ro
+      - ./MuslimBot/mcp-servers/chatwoot-mcp/vendor/mcp-chatwoot:/opt/mcp/mcp-servers/chatwoot-mcp/vendor/mcp-chatwoot
     depends_on:
       platform-postgres:
         condition: service_healthy
